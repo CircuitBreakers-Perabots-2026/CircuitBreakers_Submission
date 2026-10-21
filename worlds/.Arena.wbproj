@@ -6,4 +6,5 @@ maximizedDockId: -1
 centralWidgetVisible: 1
 orthographicViewHeight: 1
 textFiles: 0 "controllers/main_controller/main_controller.py"
+globalOptionalRendering: DistanceSensorRays
 consoles: Console:All:All

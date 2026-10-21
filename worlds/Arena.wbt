@@ -35,13 +35,20 @@ Arena {
 Obstacles {
 }
 TwoWheelRobot {
-  hidden position_0_0 182.9762683832445
-  hidden position_0_1 181.53906180857115
-  hidden rotation_1 -0.8695059847617499 -0.34925524072717834 0.3492565236156661 4.573008735752121
-  hidden rotation_2 -0.8962323701596873 0.31366129495876754 -0.3136624471031529 4.603048271173694
-  translation 2.26866 0.159772 0.00245697
-  rotation -0.026775583990977556 0.010250747447849066 0.9995889106421213 2.3235643717090495
+  translation 2.315 0.125 0.003
+  rotation 0 0 1 3.14159
   name "team_robot_template"
   controller "main_controller"
   bodyColor 1 0.55 0
+  extensionSlot [
+    DistanceSensor {
+      translation 0.045 0 0.065
+      rotation 0 1 0 0
+      name "front_distance"
+      lookupTable [
+        0 0 0
+        1 1 0
+      ]
+    }
+  ]
 }

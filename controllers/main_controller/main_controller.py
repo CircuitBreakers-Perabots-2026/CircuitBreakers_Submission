@@ -1,10 +1,25 @@
 from controller import Robot
+import math
+
 
 TIME_STEP = 64
 
-# Test "forward" first, then "left".
-TEST = "forward"
-PEAK_SPEED = 2.0  # Wheel angular speed, radians/second.
+# First use "read_only" to check the sensor.
+# Then change to "approach" to test automatic stopping.
+MODE = "approach"
+
+SETTLE_SECONDS = 1.0
+REPORT_INTERVAL = 0.25
+
+MAX_SPEED = 1.0           # Wheel angular speed, rad/s.
+MIN_APPROACH_SPEED = 0.25
+COMMAND_ACCELERATION = 0.5  # Command change limit, rad/s².
+
+STOP_DISTANCE = 0.08     # Metres from the sensor.
+SLOW_DISTANCE = 0.18     # Begin slowing within this distance.
+
+if MODE not in ("read_only", "approach"):
+    raise ValueError('MODE must be "read_only" or "approach".')
 
 robot = Robot()
 
@@ -15,41 +30,96 @@ for motor in (left_motor, right_motor):
     motor.setPosition(float("inf"))
     motor.setVelocity(0.0)
 
-robot.getDevice("led_blue").set(0)
-robot.getDevice("led_green").set(0)
+led_blue = robot.getDevice("led_blue")
+led_green = robot.getDevice("led_green")
+led_blue.set(0)
+led_green.set(0)
+
+front_sensor = robot.getDevice("front_distance")
+front_sensor.enable(TIME_STEP)
 
 start_time = robot.getTime()
-previous_stage = None
+last_report = -REPORT_INTERVAL
+
+command_speed = 0.0
+stop_reason = None
+
+dt = TIME_STEP / 1000.0
+max_speed_change = COMMAND_ACCELERATION * dt
+
+print(f"Starting sensor exercise. Mode: {MODE}")
 
 while robot.step(TIME_STEP) != -1:
-    elapsed = robot.getTime() - start_time
+    now = robot.getTime()
+    elapsed = now - start_time
+    distance = front_sensor.getValue()
 
-    if elapsed < 1.0:
-        stage = "Holding still"
-        speed = 0.0
-    elif elapsed < 3.0:
-        stage = "Accelerating"
-        speed = PEAK_SPEED * (elapsed - 1.0) / 2.0
-    elif elapsed < 5.0:
-        stage = "Steady movement"
-        speed = PEAK_SPEED
-    elif elapsed < 7.0:
-        stage = "Decelerating"
-        speed = PEAK_SPEED * (7.0 - elapsed) / 2.0
+    valid_reading = (
+        math.isfinite(distance)
+        and 0.0 <= distance <= 1.0
+    )
+
+    target_speed = 0.0
+    immediate_stop = False
+
+    if elapsed < SETTLE_SECONDS:
+        state = "Settling"
+
+    elif not valid_reading:
+        stop_reason = "Invalid sensor reading"
+        state = stop_reason
+        immediate_stop = True
+
+    elif MODE == "read_only":
+        state = "Reading sensor; motors stopped"
+
+    elif stop_reason is not None:
+        state = stop_reason
+
+    elif distance <= STOP_DISTANCE:
+        stop_reason = "Obstacle reached stopping threshold"
+        state = stop_reason
+        immediate_stop = True
+        print(stop_reason)
+
     else:
-        stage = "Stopped"
-        speed = 0.0
+        state = "Approaching obstacle"
 
-    if stage != previous_stage:
-        print(stage)
-        previous_stage = stage
+        # Scale the desired speed as the obstacle gets closer.
+        fraction = (
+            (distance - STOP_DISTANCE)
+            / (SLOW_DISTANCE - STOP_DISTANCE)
+        )
 
-    if TEST == "forward":
-        left_motor.setVelocity(speed)
-        right_motor.setVelocity(speed)
-    elif TEST == "left":
-        left_motor.setVelocity(-speed)
-        right_motor.setVelocity(speed)
+        target_speed = min(
+            MAX_SPEED,
+            max(MIN_APPROACH_SPEED, MAX_SPEED * fraction)
+        )
+
+    if immediate_stop:
+        command_speed = 0.0
     else:
-        left_motor.setVelocity(0.0)
-        right_motor.setVelocity(0.0)
+        # Gradually change the speed command.
+        difference = target_speed - command_speed
+        change = max(
+            -max_speed_change,
+            min(max_speed_change, difference)
+        )
+        command_speed += change
+
+    left_motor.setVelocity(command_speed)
+    right_motor.setVelocity(command_speed)
+
+    if now - last_report >= REPORT_INTERVAL:
+        distance_text = (
+            f"{distance:.3f} m"
+            if valid_reading
+            else "INVALID"
+        )
+
+        print(
+            f"{state} | "
+            f"front={distance_text} | "
+            f"wheel command={command_speed:.2f} rad/s"
+        )
+        last_report = now

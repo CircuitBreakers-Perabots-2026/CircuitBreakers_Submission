@@ -12,7 +12,19 @@ PROTO TwoWheelRobot [
   field SFString   controller     "<none>"
   field MFString   controllerArgs []
   field SFColor    bodyColor      0.15 0.15 0.6
-  field MFNode     extensionSlot  []
+  field MFNode extensionSlot [
+    DistanceSensor {
+      translation 0.045 0 0.065
+      rotation 0 1 0 -0.642
+      name "front_distance"
+      type "generic"
+      numberOfRays 1
+      lookupTable [
+        0 0 0
+        1 1 0
+      ]
+    }
+  ]
 ] {
   Robot {
     translation IS translation
@@ -43,7 +55,7 @@ PROTO TwoWheelRobot [
       HingeJoint {
         jointParameters HingeJointParameters {
           axis 0 1 0
-          anchor 0 0.032 0.02
+          anchor 0.003 0.032 0.02
         }
         device [
           RotationalMotor {
@@ -54,7 +66,7 @@ PROTO TwoWheelRobot [
           }
         ]
         endPoint Solid {
-          translation 0 0.032 0.02
+          translation 0.003 0.032 0.02
           rotation 1 0 0 1.5708
           children [
             Shape {
@@ -85,7 +97,7 @@ PROTO TwoWheelRobot [
       HingeJoint {
         jointParameters HingeJointParameters {
           axis 0 1 0
-          anchor 0 -0.032 0.02
+          anchor 0.003 -0.032 0.02
         }
         device [
           RotationalMotor {
@@ -96,7 +108,7 @@ PROTO TwoWheelRobot [
           }
         ]
         endPoint Solid {
-          translation 0 -0.032 0.02
+          translation 0.003 -0.032 0.02
           rotation 1 0 0 1.5708
           children [
             Shape {
