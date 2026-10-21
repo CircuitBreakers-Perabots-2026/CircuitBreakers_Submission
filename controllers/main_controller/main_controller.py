@@ -1,9 +1,10 @@
 from controller import Robot
 import math
+from turning import Turn90
 
 TIME_STEP = 64
 
-MODE = "approach"
+MODE = "turn_right"
 
 SETTLE_SECONDS = 1.0
 REPORT_INTERVAL = 0.25
@@ -12,14 +13,15 @@ MAX_SPEED = 2.0 # Wheel angular speed, rad/s.
 MIN_APPROACH_SPEED = 0.25
 COMMAND_ACCELERATION = 0.5  # Command change limit, rad/s².
 
-STOP_DISTANCE = 0.08     # Metres from the sensor.
-SLOW_DISTANCE = 0.18     # Begin slowing within this distance.
+STOP_DISTANCE = 0.08  # Metres from the sensor.
+SLOW_DISTANCE = 0.18  # Begin slowing within this distance.
 
-if MODE not in ("read_only", "approach"):
-    raise ValueError('MODE must be "read_only" or "approach".')
+if MODE not in ("read_only", "approach", "turn_left", "turn_right"):
+    raise ValueError("Unknown exercise mode: " + MODE)
 
 robot = Robot()
 
+# Motors
 left_motor = robot.getDevice("left_wheel_motor")
 right_motor = robot.getDevice("right_wheel_motor")
 
@@ -27,17 +29,51 @@ for motor in (left_motor, right_motor):
     motor.setPosition(float("inf"))
     motor.setVelocity(0.0)
 
+# LEDs
 led_blue = robot.getDevice("led_blue")
 led_green = robot.getDevice("led_green")
 led_blue.set(0)
 led_green.set(0)
 
+# Distnace Sensors
 front_sensor = robot.getDevice("front_distance")
 left_sensor = robot.getDevice("left_distance")
 right_sensor = robot.getDevice("right_distance")
 
 for sensor in (front_sensor, left_sensor, right_sensor):
     sensor.enable(TIME_STEP)
+
+# Inertial Sensor
+imu = robot.getDevice("imu")
+imu.enable(TIME_STEP)
+
+if MODE in ("turn_left", "turn_right"):
+    direction = "left" if MODE == "turn_left" else "right"
+    turn = Turn90(direction, robot.getTime())
+    last_report = -REPORT_INTERVAL
+    previous_status = None
+    while robot.step(TIME_STEP) != -1:
+        now = robot.getTime()
+        roll, pitch, yaw = imu.getRollPitchYaw()
+        left_speed, right_speed = turn.update(now, yaw)
+        left_motor.setVelocity(left_speed)
+        right_motor.setVelocity(right_speed)
+
+        if turn.status != previous_status or now - last_report >= REPORT_INTERVAL:
+            error_text = (
+                f"{math.degrees(turn.error):.1f} deg"
+                if turn.error is not None else "waiting"
+            )
+            print(
+                f"{turn.status} | direction={direction} | "
+                f"yaw={math.degrees(yaw):.1f} deg | "
+                f"change={math.degrees(turn.change):.1f} deg | "
+                f"error={error_text} | pitch={math.degrees(pitch):.1f} deg"
+            )
+            previous_status = turn.status
+            last_report = now
+
+    raise SystemExit
 
 start_time = robot.getTime()
 last_report = -REPORT_INTERVAL
@@ -62,6 +98,13 @@ while robot.step(TIME_STEP) != -1:
 
     target_speed = 0.0
     immediate_stop = False
+
+    roll, pitch, yaw = imu.getRollPitchYaw()
+
+    print(
+    f"Heading: {math.degrees(yaw):.1f} degrees | "
+    f"Pitch: {math.degrees(pitch):.1f} degrees"
+    )
 
     if elapsed < SETTLE_SECONDS:
         state = "Settling"

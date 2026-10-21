@@ -48,6 +48,10 @@ PROTO TwoWheelRobot [
         1 1 0
       ]
     }
+
+    InertialUnit {
+      name "imu"
+    }
   ]
 ] {
   Robot {
