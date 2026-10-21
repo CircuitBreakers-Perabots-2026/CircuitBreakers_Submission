@@ -1,62 +1,55 @@
-"""
-main_controller.py
-
-The simplest possible starter controller for TwoWheelRobot.
-It does NOT try to avoid walls - it just drives around randomly and will
-bump into whatever is in its way. Both LEDs are also switched on so you
-can visually confirm they work. This is meant purely as a placeholder /
-example for teams to build on and edit themselves.
-
-File placement:
-  controllers/main_controller/main_controller.py
-(folder name and file name must match exactly)
-"""
-
 from controller import Robot
-import random
 
 TIME_STEP = 64
-MAX_SPEED = 6.0
+
+# Test "forward" first, then "left".
+TEST = "forward"
+PEAK_SPEED = 2.0  # Wheel angular speed, radians/second.
 
 robot = Robot()
 
-left_motor = robot.getDevice('left_wheel_motor')
-right_motor = robot.getDevice('right_wheel_motor')
-left_motor.setPosition(float('inf'))
-right_motor.setPosition(float('inf'))
-left_motor.setVelocity(0.0)
-right_motor.setVelocity(0.0)
+left_motor = robot.getDevice("left_wheel_motor")
+right_motor = robot.getDevice("right_wheel_motor")
 
-# --- LED test: turn both on and leave them on the whole time ---
-led_blue = robot.getDevice('led_blue')
-led_green = robot.getDevice('led_green')
-led_blue.set(1)
-led_green.set(1)
+for motor in (left_motor, right_motor):
+    motor.setPosition(float("inf"))
+    motor.setVelocity(0.0)
 
-# how many simulation steps to keep doing the current action before
-# picking a new random one
-steps_left = 0
-left_speed = MAX_SPEED
-right_speed = MAX_SPEED
+robot.getDevice("led_blue").set(0)
+robot.getDevice("led_green").set(0)
+
+start_time = robot.getTime()
+previous_stage = None
 
 while robot.step(TIME_STEP) != -1:
-    if steps_left <= 0:
-        # pick a new random action: mostly drive forward, sometimes turn
-        action = random.choice(['forward', 'forward', 'forward', 'turn_left', 'turn_right'])
+    elapsed = robot.getTime() - start_time
 
-        if action == 'forward':
-            left_speed = MAX_SPEED
-            right_speed = MAX_SPEED
-            steps_left = random.randint(20, 60)   # keep going straight a while
-        elif action == 'turn_left':
-            left_speed = -MAX_SPEED * 0.5
-            right_speed = MAX_SPEED * 0.5
-            steps_left = random.randint(5, 15)
-        else:  # turn_right
-            left_speed = MAX_SPEED * 0.5
-            right_speed = -MAX_SPEED * 0.5
-            steps_left = random.randint(5, 15)
+    if elapsed < 1.0:
+        stage = "Holding still"
+        speed = 0.0
+    elif elapsed < 3.0:
+        stage = "Accelerating"
+        speed = PEAK_SPEED * (elapsed - 1.0) / 2.0
+    elif elapsed < 5.0:
+        stage = "Steady movement"
+        speed = PEAK_SPEED
+    elif elapsed < 7.0:
+        stage = "Decelerating"
+        speed = PEAK_SPEED * (7.0 - elapsed) / 2.0
+    else:
+        stage = "Stopped"
+        speed = 0.0
 
-    left_motor.setVelocity(left_speed)
-    right_motor.setVelocity(right_speed)
-    steps_left -= 1
+    if stage != previous_stage:
+        print(stage)
+        previous_stage = stage
+
+    if TEST == "forward":
+        left_motor.setVelocity(speed)
+        right_motor.setVelocity(speed)
+    elif TEST == "left":
+        left_motor.setVelocity(-speed)
+        right_motor.setVelocity(speed)
+    else:
+        left_motor.setVelocity(0.0)
+        right_motor.setVelocity(0.0)
