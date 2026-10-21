@@ -1,0 +1,215 @@
+#VRML_SIM R2025a utf8
+# TwoWheelRobot.proto - minimal differential-drive robot base for teams to
+# customize. Chassis, wheels, motors, caster and physics are fixed/locked;
+# teams may only change cosmetic fields and add their own sensors/parts
+# through "extensionSlot" without touching the drivetrain itself.
+# supervisor is hardcoded FALSE and not exposed, so it cannot be enabled.
+
+PROTO TwoWheelRobot [
+  field SFVec3f    translation    0 0 0
+  field SFRotation rotation       0 0 1 0
+  field SFString   name           "TwoWheelRobot"
+  field SFString   controller     "<none>"
+  field MFString   controllerArgs []
+  field SFColor    bodyColor      0.15 0.15 0.6
+  field MFNode     extensionSlot  []
+] {
+  Robot {
+    translation IS translation
+    rotation IS rotation
+    name IS name
+    controller IS controller
+    controllerArgs IS controllerArgs
+    supervisor FALSE
+    children [
+      # --- Chassis (cosmetic color only, dimensions locked) ---
+      Transform {
+        translation 0 0 0.04
+        children [
+          Shape {
+            appearance PBRAppearance {
+              baseColor IS bodyColor
+              roughness 1
+              metalness 0
+            }
+            geometry Box {
+              size 0.08 0.05 0.03
+            }
+          }
+        ]
+      }
+
+      # --- Left wheel ---
+      HingeJoint {
+        jointParameters HingeJointParameters {
+          axis 0 1 0
+          anchor 0 0.032 0.02
+        }
+        device [
+          RotationalMotor {
+            name "left_wheel_motor"
+          }
+          PositionSensor {
+            name "left_wheel_sensor"
+          }
+        ]
+        endPoint Solid {
+          translation 0 0.032 0.02
+          rotation 1 0 0 1.5708
+          children [
+            Shape {
+              appearance PBRAppearance {
+                baseColor 0.05 0.05 0.05
+                roughness 1
+                metalness 0
+              }
+              geometry Cylinder {
+                height 0.01
+                radius 0.02
+              }
+            }
+          ]
+          name "left_wheel"
+          boundingObject Cylinder {
+            height 0.01
+            radius 0.02
+          }
+          physics Physics {
+            density -1
+            mass 0.01
+          }
+        }
+      }
+
+      # --- Right wheel ---
+      HingeJoint {
+        jointParameters HingeJointParameters {
+          axis 0 1 0
+          anchor 0 -0.032 0.02
+        }
+        device [
+          RotationalMotor {
+            name "right_wheel_motor"
+          }
+          PositionSensor {
+            name "right_wheel_sensor"
+          }
+        ]
+        endPoint Solid {
+          translation 0 -0.032 0.02
+          rotation 1 0 0 1.5708
+          children [
+            Shape {
+              appearance PBRAppearance {
+                baseColor 0.05 0.05 0.05
+                roughness 1
+                metalness 0
+              }
+              geometry Cylinder {
+                height 0.01
+                radius 0.02
+              }
+            }
+          ]
+          name "right_wheel"
+          boundingObject Cylinder {
+            height 0.01
+            radius 0.02
+          }
+          physics Physics {
+            density -1
+            mass 0.01
+          }
+        }
+      }
+
+      # --- Rear caster ball (passive third contact point for stability) ---
+      Transform {
+        translation -0.03 0 0.008
+        children [
+          Shape {
+            appearance PBRAppearance {
+              baseColor 0.3 0.3 0.3
+              roughness 1
+              metalness 0
+            }
+            geometry Sphere {
+              radius 0.008
+            }
+          }
+        ]
+      }
+
+      # --- Required status LEDs (fixed device names: led_blue / led_green) ---
+      LED {
+        translation 0.02 0.012 0.06
+        children [
+          Shape {
+            appearance PBRAppearance {
+              baseColor 0 0 0
+              emissiveColor 0 0 1
+              roughness 1
+              metalness 0
+            }
+            geometry Sphere {
+              radius 0.005
+            }
+          }
+        ]
+        name "led_blue"
+        color [
+          0 0 1
+        ]
+      }
+      LED {
+        translation 0.02 -0.012 0.06
+        children [
+          Shape {
+            appearance PBRAppearance {
+              baseColor 0 0 0
+              emissiveColor 0 1 0
+              roughness 1
+              metalness 0
+            }
+            geometry Sphere {
+              radius 0.005
+            }
+          }
+        ]
+        name "led_green"
+        color [
+          0 1 0
+        ]
+      }
+
+      # --- Open slot: teams add their own sensors/parts here ---
+      Group {
+        children IS extensionSlot
+      }
+    ]
+    boundingObject Group {
+      children [
+        Transform {
+          translation 0 0 0.04
+          children [
+            Box {
+              size 0.08 0.05 0.03
+            }
+          ]
+        }
+        Transform {
+          translation -0.03 0 0.008
+          children [
+            Sphere {
+              radius 0.008
+            }
+          ]
+        }
+      ]
+    }
+    physics Physics {
+      density -1
+      mass 0.15
+    }
+  }
+}

@@ -1,0 +1,47 @@
+#VRML_SIM R2025a utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "../protos/Arena.proto"
+EXTERNPROTO "../protos/Obstacles.proto"
+EXTERNPROTO "../protos/TwoWheelRobot.proto"
+
+WorldInfo {
+  info [
+    "Robotics Competition - Elimination Task Arena"
+    "Section 1: Obstacle Avoidance (white floor)"
+    "Section 2: Maze Search (black floor, 9x4 grid of 25cm cells)"
+  ]
+  title "Elimination Arena"
+  basicTimeStep 16
+}
+Viewpoint {
+  orientation 0.3221192235213168 0.13310256706253637 -0.9372955310249733 2.495556648345806
+  position 4.932935979615753 3.7905624921649914 3.300235850168842
+}
+TexturedBackground {
+  texture "empty_office"
+}
+TexturedBackgroundLight {
+  texture "empty_office"
+}
+DirectionalLight {
+  direction 0.3 0.4 -1
+  intensity 2.2
+  castShadows TRUE
+}
+Arena {
+}
+Obstacles {
+}
+TwoWheelRobot {
+  hidden position_0_0 182.9762683832445
+  hidden position_0_1 181.53906180857115
+  hidden rotation_1 -0.8695059847617499 -0.34925524072717834 0.3492565236156661 4.573008735752121
+  hidden rotation_2 -0.8962323701596873 0.31366129495876754 -0.3136624471031529 4.603048271173694
+  translation 2.26866 0.159772 0.00245697
+  rotation -0.026775583990977556 0.010250747447849066 0.9995889106421213 2.3235643717090495
+  name "team_robot_template"
+  controller "main_controller"
+  bodyColor 1 0.55 0
+}
