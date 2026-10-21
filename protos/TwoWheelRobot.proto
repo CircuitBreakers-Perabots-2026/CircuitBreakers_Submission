@@ -15,7 +15,7 @@ PROTO TwoWheelRobot [
   field MFNode extensionSlot [
     DistanceSensor {
       translation 0.045 0 0.065
-      rotation 0 1 0 -0.642
+      rotation 0 1 0 0
       name "front_distance"
       type "generic"
       numberOfRays 1
