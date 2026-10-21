@@ -40,15 +40,4 @@ TwoWheelRobot {
   name "team_robot_template"
   controller "main_controller"
   bodyColor 1 0.55 0
-  extensionSlot [
-    DistanceSensor {
-      translation 0.045 0 0.065
-      rotation 0 1 0 0
-      name "front_distance"
-      lookupTable [
-        0 0 0
-        1 1 0
-      ]
-    }
-  ]
 }

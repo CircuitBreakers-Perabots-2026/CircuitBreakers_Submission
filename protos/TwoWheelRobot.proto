@@ -24,6 +24,30 @@ PROTO TwoWheelRobot [
         1 1 0
       ]
     }
+
+    DistanceSensor {
+      translation 0.003 0.045 0.04
+      rotation 0 0 1 1.5708
+      name "left_distance"
+      type "generic"
+      numberOfRays 1
+      lookupTable [
+        0 0 0
+        1 1 0
+      ]
+    }
+
+    DistanceSensor {
+      translation 0.003 -0.045 0.04
+      rotation 0 0 1 -1.5708
+      name "right_distance"
+      type "generic"
+      numberOfRays 1
+      lookupTable [
+        0 0 0
+        1 1 0
+      ]
+    }
   ]
 ] {
   Robot {

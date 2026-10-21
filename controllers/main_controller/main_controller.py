@@ -1,17 +1,14 @@
 from controller import Robot
 import math
 
-
 TIME_STEP = 64
 
-# First use "read_only" to check the sensor.
-# Then change to "approach" to test automatic stopping.
 MODE = "approach"
 
 SETTLE_SECONDS = 1.0
 REPORT_INTERVAL = 0.25
 
-MAX_SPEED = 1.0           # Wheel angular speed, rad/s.
+MAX_SPEED = 2.0 # Wheel angular speed, rad/s.
 MIN_APPROACH_SPEED = 0.25
 COMMAND_ACCELERATION = 0.5  # Command change limit, rad/s².
 
@@ -36,7 +33,11 @@ led_blue.set(0)
 led_green.set(0)
 
 front_sensor = robot.getDevice("front_distance")
-front_sensor.enable(TIME_STEP)
+left_sensor = robot.getDevice("left_distance")
+right_sensor = robot.getDevice("right_distance")
+
+for sensor in (front_sensor, left_sensor, right_sensor):
+    sensor.enable(TIME_STEP)
 
 start_time = robot.getTime()
 last_report = -REPORT_INTERVAL
@@ -111,6 +112,8 @@ while robot.step(TIME_STEP) != -1:
     right_motor.setVelocity(command_speed)
 
     if now - last_report >= REPORT_INTERVAL:
+        left_distance = left_sensor.getValue()
+        right_distance = right_sensor.getValue()
         distance_text = (
             f"{distance:.3f} m"
             if valid_reading
@@ -120,6 +123,8 @@ while robot.step(TIME_STEP) != -1:
         print(
             f"{state} | "
             f"front={distance_text} | "
+            f"left={left_distance:.3f} m | "
+            f"right={right_distance:.3f} m | "
             f"wheel command={command_speed:.2f} rad/s"
         )
         last_report = now
