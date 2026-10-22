@@ -2,7 +2,6 @@
 
 import math
 
-
 def angle_difference(target, current):
     return math.atan2(math.sin(target - current), math.cos(target - current))
 

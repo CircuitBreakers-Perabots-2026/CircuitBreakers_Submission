@@ -1,7 +1,7 @@
 from controller import Robot
 from turning import Turn90
+from movement import MoveForward
 import math
-
 
 TIME_STEP = 16
 
@@ -11,7 +11,8 @@ TIME_STEP = 16
 # "approach"   : approach one obstacle, then remain stopped
 # "turn_left"  : perform one 90-degree left turn
 # "turn_right" : perform one 90-degree right turn
-MODE = "navigate"
+# "move_cell"  : move forward by a specified distance
+MODE = "move_cell"  # Change this to test different modes
 
 SETTLE_SECONDS = 1.0
 REPORT_INTERVAL = 0.25
@@ -41,6 +42,7 @@ VALID_MODES = {
     "approach",
     "turn_left",
     "turn_right",
+    "move_cell",
 }
 
 if MODE not in VALID_MODES:
@@ -88,6 +90,13 @@ for sensor in distance_sensors.values():
 imu = robot.getDevice("imu")
 imu.enable(TIME_STEP)
 
+# Encoders
+left_encoder = robot.getDevice("left_wheel_sensor")
+right_encoder = robot.getDevice("right_wheel_sensor")
+
+left_encoder.enable(TIME_STEP)
+right_encoder.enable(TIME_STEP)
+
 dt = TIME_STEP / 1000.0
 max_speed_change = COMMAND_ACCELERATION * dt
 
@@ -99,6 +108,8 @@ command_left = 0.0
 command_right = 0.0
 
 turn = None
+move = None
+
 turn_attempts = 0
 fault_reason = ""
 
@@ -132,7 +143,7 @@ while robot.step(TIME_STEP) != -1:
     desired_right = 0.0
 
     # Turn90 already limits its wheel-command changes.
-    direct_turn_commands = False
+    direct_action_commands = False
 
     # Stop on invalid readings after the initial settling period.
     if state not in ("SETTLING", "READ_ONLY", "DONE", "FAULT"):
@@ -163,7 +174,15 @@ while robot.step(TIME_STEP) != -1:
                 )
                 turn = Turn90(direction, now)
                 state = "TURNING"
-
+            elif MODE == "move_cell":
+                move = MoveForward(
+                    target_distance=0.25,
+                    start_time=now,
+                    left_position=left_encoder.getValue(),
+                    right_position=right_encoder.getValue(),
+                    yaw=yaw,
+                )
+                state = "MOVE_CELL"
             else:
                 state = "FORWARD"
 
@@ -172,6 +191,29 @@ while robot.step(TIME_STEP) != -1:
     elif state == "READ_ONLY":
         # Motors remain stopped.
         pass
+
+    elif state == "MOVE_CELL":
+        desired_left, desired_right = move.update(
+            now=now,
+            left_position=left_encoder.getValue(),
+            right_position=right_encoder.getValue(),
+            yaw=yaw,
+            front_distance=front_distance,
+        )
+
+        direct_action_commands = True
+
+        if move.fault:
+            state = "FAULT"
+            fault_reason = move.fault
+
+        elif move.complete:
+            state = "DONE"
+
+            print(
+                "MOVE COMPLETE: "
+                f"distance={move.distance:.3f} m"
+            )
 
     elif state == "FORWARD":
         if front_distance <= STOP_DISTANCE:
@@ -259,7 +301,7 @@ while robot.step(TIME_STEP) != -1:
 
     elif state == "TURNING":
         desired_left, desired_right = turn.update(now, yaw)
-        direct_turn_commands = True
+        direct_action_commands = True
 
         if turn.fault:
             state = "FAULT"
@@ -305,7 +347,7 @@ while robot.step(TIME_STEP) != -1:
         command_left = 0.0
         command_right = 0.0
 
-    elif direct_turn_commands:
+    elif direct_action_commands:
         command_left = desired_left
         command_right = desired_right
 
@@ -339,7 +381,15 @@ while robot.step(TIME_STEP) != -1:
             f"{command_right:.2f})"
         )
 
+
         if state == "FAULT":
             print(f"Reason: {fault_reason}")
+
+        if move is not None:
+            print(
+                f"Movement: {move.status} | "
+                f"distance={move.distance:.3f} m | "
+                f"target={move.target_distance:.3f} m"
+            )
 
         last_report = now
