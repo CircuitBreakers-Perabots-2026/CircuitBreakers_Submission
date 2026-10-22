@@ -67,9 +67,9 @@ class Turn90:
         within_tolerance = abs(self.error) <= math.radians(2)
         desired_speed = (
             0.0 if within_tolerance
-            else max(-1.0, min(1.0, 2.0 * self.error))
+            else max(-0.5, min(0.5, 1.2 * self.error))
         )
-        max_change = 0.5 * dt
+        max_change = 0.25 * dt
         self.speed += max(
             -max_change, min(max_change, desired_speed - self.speed)
         )

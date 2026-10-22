@@ -3,7 +3,7 @@ from turning import Turn90
 import math
 
 
-TIME_STEP = 64
+TIME_STEP = 16
 
 # Available modes:
 # "navigate"   : approach, stop, choose a side, turn, and continue
@@ -16,22 +16,24 @@ MODE = "navigate"
 SETTLE_SECONDS = 1.0
 REPORT_INTERVAL = 0.25
 
-MAX_SPEED = 1.0
-MIN_APPROACH_SPEED = 0.25
-COMMAND_ACCELERATION = 0.5
+MAX_SPEED = 0.5
+MIN_APPROACH_SPEED = 0.15
+COMMAND_ACCELERATION = 0.25
 
-STOP_DISTANCE = 0.08
-SLOW_DISTANCE = 0.18
-RESUME_DISTANCE = 0.12
+STOP_DISTANCE = 0.12
+SLOW_DISTANCE = 0.22
+RESUME_DISTANCE = 0.16
 
 # Starting threshold for deciding whether a side is open.
 SIDE_CLEARANCE = 0.15
 
-STOP_HOLD_SECONDS = 0.3
-RECHECK_SECONDS = 0.3
+STOP_HOLD_SECONDS = 1.0
+RECHECK_SECONDS = 0.5
 
 # Prevent repeated turns when no usable direction is found.
 MAX_TURN_ATTEMPTS = 2
+
+MAX_TILT = math.radians(10)
 
 VALID_MODES = {
     "navigate",
@@ -137,9 +139,18 @@ while robot.step(TIME_STEP) != -1:
         if not distances_valid:
             state = "FAULT"
             fault_reason = "Invalid distance-sensor reading"
+
         elif not heading_valid:
             state = "FAULT"
             fault_reason = "Invalid IMU reading"
+
+        elif abs(pitch) > MAX_TILT or abs(roll) > MAX_TILT:
+            state = "FAULT"
+            fault_reason = (
+                "Excessive body tilt: "
+                f"pitch={math.degrees(pitch):.1f} deg, "
+                f"roll={math.degrees(roll):.1f} deg"
+            )
 
     if state == "SETTLING":
         if now - state_started >= SETTLE_SECONDS:
