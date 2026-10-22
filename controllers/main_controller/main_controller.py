@@ -1,6 +1,7 @@
 from controller import Robot
 from turning import Turn90
 from movement import MoveForward
+from sequence import ActionSequence
 import math
 
 TIME_STEP = 16
@@ -12,7 +13,8 @@ TIME_STEP = 16
 # "turn_left"  : perform one 90-degree left turn
 # "turn_right" : perform one 90-degree right turn
 # "move_cell"  : move forward by a specified distance
-MODE = "move_cell"  # Change this to test different modes
+# "sequence"   : run a sequence of actions
+MODE = "sequence"  # Change this to test different modes
 
 SETTLE_SECONDS = 1.0
 REPORT_INTERVAL = 0.25
@@ -43,6 +45,7 @@ VALID_MODES = {
     "turn_left",
     "turn_right",
     "move_cell",
+    "sequence",
 }
 
 if MODE not in VALID_MODES:
@@ -109,6 +112,7 @@ command_right = 0.0
 
 turn = None
 move = None
+sequence = None
 
 turn_attempts = 0
 fault_reason = ""
@@ -183,6 +187,16 @@ while robot.step(TIME_STEP) != -1:
                     yaw=yaw,
                 )
                 state = "MOVE_CELL"
+            elif MODE == "sequence":
+                sequence = ActionSequence(
+                    steps=[
+                        ("move", 0.25),
+                        ("turn", "right"),
+                        ("move", 0.25),
+                    ],
+                    start_time=now,
+                )
+                state = "SEQUENCE"
             else:
                 state = "FORWARD"
 
@@ -191,6 +205,25 @@ while robot.step(TIME_STEP) != -1:
     elif state == "READ_ONLY":
         # Motors remain stopped.
         pass
+
+    elif state == "SEQUENCE":
+        desired_left, desired_right = sequence.update(
+            now=now,
+            left_position=left_encoder.getValue(),
+            right_position=right_encoder.getValue(),
+            yaw=yaw,
+            front_distance=front_distance,
+        )
+
+        direct_action_commands = True
+
+        if sequence.fault:
+            state = "FAULT"
+            fault_reason = sequence.fault
+
+        elif sequence.complete:
+            state = "DONE"
+            print("SEQUENCE COMPLETE. Holding stopped.")
 
     elif state == "MOVE_CELL":
         desired_left, desired_right = move.update(
@@ -391,5 +424,8 @@ while robot.step(TIME_STEP) != -1:
                 f"distance={move.distance:.3f} m | "
                 f"target={move.target_distance:.3f} m"
             )
+
+        if sequence is not None:
+            print(f"Sequence: {sequence.status}")
 
         last_report = now
