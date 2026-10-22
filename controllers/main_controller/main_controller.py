@@ -14,7 +14,8 @@ TIME_STEP = 16
 # "turn_right" : perform one 90-degree right turn
 # "move_cell"  : move forward by a specified distance
 # "sequence"   : run a sequence of actions
-MODE = "sequence"  # Change this to test different modes
+# "maze"       : navigate through a maze
+MODE = "maze"  # Change this to test different modes
 
 SETTLE_SECONDS = 1.0
 REPORT_INTERVAL = 0.25
@@ -46,6 +47,7 @@ VALID_MODES = {
     "turn_right",
     "move_cell",
     "sequence",
+    "maze",
 }
 
 if MODE not in VALID_MODES:
@@ -66,6 +68,12 @@ def valid_distance(value):
 
 
 robot = Robot()
+
+if MODE == "maze":
+    from maze_navigation import run_maze
+
+    run_maze(robot, TIME_STEP)
+    raise SystemExit
 
 # Motors
 left_motor = robot.getDevice("left_wheel_motor")
