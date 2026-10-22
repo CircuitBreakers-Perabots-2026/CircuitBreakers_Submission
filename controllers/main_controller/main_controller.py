@@ -1,23 +1,62 @@
 from controller import Robot
-import math
 from turning import Turn90
+import math
+
 
 TIME_STEP = 64
 
-MODE = "turn_right"
+# Available modes:
+# "navigate"   : approach, stop, choose a side, turn, and continue
+# "read_only"  : report sensor readings without moving
+# "approach"   : approach one obstacle, then remain stopped
+# "turn_left"  : perform one 90-degree left turn
+# "turn_right" : perform one 90-degree right turn
+MODE = "navigate"
 
 SETTLE_SECONDS = 1.0
 REPORT_INTERVAL = 0.25
 
-MAX_SPEED = 2.0 # Wheel angular speed, rad/s.
+MAX_SPEED = 1.0
 MIN_APPROACH_SPEED = 0.25
-COMMAND_ACCELERATION = 0.5  # Command change limit, rad/s².
+COMMAND_ACCELERATION = 0.5
 
-STOP_DISTANCE = 0.08  # Metres from the sensor.
-SLOW_DISTANCE = 0.18  # Begin slowing within this distance.
+STOP_DISTANCE = 0.08
+SLOW_DISTANCE = 0.18
+RESUME_DISTANCE = 0.12
 
-if MODE not in ("read_only", "approach", "turn_left", "turn_right"):
-    raise ValueError("Unknown exercise mode: " + MODE)
+# Starting threshold for deciding whether a side is open.
+SIDE_CLEARANCE = 0.15
+
+STOP_HOLD_SECONDS = 0.3
+RECHECK_SECONDS = 0.3
+
+# Prevent repeated turns when no usable direction is found.
+MAX_TURN_ATTEMPTS = 2
+
+VALID_MODES = {
+    "navigate",
+    "read_only",
+    "approach",
+    "turn_left",
+    "turn_right",
+}
+
+if MODE not in VALID_MODES:
+    raise ValueError(f"Unknown mode: {MODE}")
+
+
+def move_toward(current, target, maximum_change):
+    """Limit the change in a wheel-speed command."""
+    difference = target - current
+    return current + max(
+        -maximum_change,
+        min(maximum_change, difference)
+    )
+
+
+def valid_distance(value):
+    return math.isfinite(value) and 0.0 <= value <= 1.0
+
 
 robot = Robot()
 
@@ -29,145 +68,267 @@ for motor in (left_motor, right_motor):
     motor.setPosition(float("inf"))
     motor.setVelocity(0.0)
 
-# LEDs
-led_blue = robot.getDevice("led_blue")
-led_green = robot.getDevice("led_green")
-led_blue.set(0)
-led_green.set(0)
+# Required decision LEDs remain off during this exercise.
+robot.getDevice("led_blue").set(0)
+robot.getDevice("led_green").set(0)
 
-# Distnace Sensors
-front_sensor = robot.getDevice("front_distance")
-left_sensor = robot.getDevice("left_distance")
-right_sensor = robot.getDevice("right_distance")
+# Distance sensors
+distance_sensors = {
+    "front": robot.getDevice("front_distance"),
+    "left": robot.getDevice("left_distance"),
+    "right": robot.getDevice("right_distance"),
+}
 
-for sensor in (front_sensor, left_sensor, right_sensor):
+for sensor in distance_sensors.values():
     sensor.enable(TIME_STEP)
 
-# Inertial Sensor
+# Heading sensor
 imu = robot.getDevice("imu")
 imu.enable(TIME_STEP)
-
-if MODE in ("turn_left", "turn_right"):
-    direction = "left" if MODE == "turn_left" else "right"
-    turn = Turn90(direction, robot.getTime())
-    last_report = -REPORT_INTERVAL
-    previous_status = None
-    while robot.step(TIME_STEP) != -1:
-        now = robot.getTime()
-        roll, pitch, yaw = imu.getRollPitchYaw()
-        left_speed, right_speed = turn.update(now, yaw)
-        left_motor.setVelocity(left_speed)
-        right_motor.setVelocity(right_speed)
-
-        if turn.status != previous_status or now - last_report >= REPORT_INTERVAL:
-            error_text = (
-                f"{math.degrees(turn.error):.1f} deg"
-                if turn.error is not None else "waiting"
-            )
-            print(
-                f"{turn.status} | direction={direction} | "
-                f"yaw={math.degrees(yaw):.1f} deg | "
-                f"change={math.degrees(turn.change):.1f} deg | "
-                f"error={error_text} | pitch={math.degrees(pitch):.1f} deg"
-            )
-            previous_status = turn.status
-            last_report = now
-
-    raise SystemExit
-
-start_time = robot.getTime()
-last_report = -REPORT_INTERVAL
-
-command_speed = 0.0
-stop_reason = None
 
 dt = TIME_STEP / 1000.0
 max_speed_change = COMMAND_ACCELERATION * dt
 
-print(f"Starting sensor exercise. Mode: {MODE}")
+state = "SETTLING"
+state_started = robot.getTime()
+last_report = -REPORT_INTERVAL
+
+command_left = 0.0
+command_right = 0.0
+
+turn = None
+turn_attempts = 0
+fault_reason = ""
+
+print(f"Starting controller. Mode: {MODE}")
 
 while robot.step(TIME_STEP) != -1:
     now = robot.getTime()
-    elapsed = now - start_time
-    distance = front_sensor.getValue()
 
-    valid_reading = (
-        math.isfinite(distance)
-        and 0.0 <= distance <= 1.0
-    )
+    distances = {
+        name: sensor.getValue()
+        for name, sensor in distance_sensors.items()
+    }
 
-    target_speed = 0.0
-    immediate_stop = False
+    front_distance = distances["front"]
+    left_distance = distances["left"]
+    right_distance = distances["right"]
 
     roll, pitch, yaw = imu.getRollPitchYaw()
 
-    print(
-    f"Heading: {math.degrees(yaw):.1f} degrees | "
-    f"Pitch: {math.degrees(pitch):.1f} degrees"
+    distances_valid = all(
+        valid_distance(value)
+        for value in distances.values()
     )
 
-    if elapsed < SETTLE_SECONDS:
-        state = "Settling"
+    heading_valid = all(
+        math.isfinite(value)
+        for value in (roll, pitch, yaw)
+    )
 
-    elif not valid_reading:
-        stop_reason = "Invalid sensor reading"
-        state = stop_reason
-        immediate_stop = True
+    desired_left = 0.0
+    desired_right = 0.0
 
-    elif MODE == "read_only":
-        state = "Reading sensor; motors stopped"
+    # Turn90 already limits its wheel-command changes.
+    direct_turn_commands = False
 
-    elif stop_reason is not None:
-        state = stop_reason
+    # Stop on invalid readings after the initial settling period.
+    if state not in ("SETTLING", "READ_ONLY", "DONE", "FAULT"):
+        if not distances_valid:
+            state = "FAULT"
+            fault_reason = "Invalid distance-sensor reading"
+        elif not heading_valid:
+            state = "FAULT"
+            fault_reason = "Invalid IMU reading"
 
-    elif distance <= STOP_DISTANCE:
-        stop_reason = "Obstacle reached stopping threshold"
-        state = stop_reason
-        immediate_stop = True
-        print(stop_reason)
+    if state == "SETTLING":
+        if now - state_started >= SETTLE_SECONDS:
+            if MODE == "read_only":
+                state = "READ_ONLY"
+
+            elif MODE in ("turn_left", "turn_right"):
+                direction = (
+                    "left" if MODE == "turn_left" else "right"
+                )
+                turn = Turn90(direction, now)
+                state = "TURNING"
+
+            else:
+                state = "FORWARD"
+
+            state_started = now
+
+    elif state == "READ_ONLY":
+        # Motors remain stopped.
+        pass
+
+    elif state == "FORWARD":
+        if front_distance <= STOP_DISTANCE:
+            if MODE == "approach":
+                state = "DONE"
+                print("Approach complete. Holding stopped.")
+            else:
+                state = "STOPPING"
+                state_started = now
+                print("Obstacle detected. Stopping.")
+
+        else:
+            fraction = (
+                (front_distance - STOP_DISTANCE)
+                / (SLOW_DISTANCE - STOP_DISTANCE)
+            )
+
+            speed = min(
+                MAX_SPEED,
+                max(
+                    MIN_APPROACH_SPEED,
+                    MAX_SPEED * fraction
+                )
+            )
+
+            desired_left = speed
+            desired_right = speed
+
+    elif state == "STOPPING":
+        commands_stopped = (
+            abs(command_left) <= 0.02
+            and abs(command_right) <= 0.02
+        )
+
+        if (
+            commands_stopped
+            and now - state_started >= STOP_HOLD_SECONDS
+        ):
+            state = "CHOOSE_TURN"
+            state_started = now
+
+    elif state == "CHOOSE_TURN":
+        left_clear = left_distance > SIDE_CLEARANCE
+        right_clear = right_distance > SIDE_CLEARANCE
+
+        if turn_attempts >= MAX_TURN_ATTEMPTS:
+            state = "FAULT"
+            fault_reason = (
+                "No clear forward route after repeated turns"
+            )
+
+        elif not left_clear and not right_clear:
+            state = "FAULT"
+            fault_reason = (
+                "Both sides blocked; dead-end recovery "
+                "is not implemented yet"
+            )
+
+        else:
+            if left_clear and not right_clear:
+                direction = "left"
+
+            elif right_clear and not left_clear:
+                direction = "right"
+
+            else:
+                direction = (
+                    "left"
+                    if left_distance >= right_distance
+                    else "right"
+                )
+
+            # Create the action once, when entering TURNING.
+            turn = Turn90(direction, now)
+            turn_attempts += 1
+
+            state = "TURNING"
+            state_started = now
+
+            print(
+                f"Choosing {direction}: "
+                f"left={left_distance:.3f} m, "
+                f"right={right_distance:.3f} m"
+            )
+
+    elif state == "TURNING":
+        desired_left, desired_right = turn.update(now, yaw)
+        direct_turn_commands = True
+
+        if turn.fault:
+            state = "FAULT"
+            fault_reason = turn.fault
+            desired_left = 0.0
+            desired_right = 0.0
+
+        elif turn.complete:
+            desired_left = 0.0
+            desired_right = 0.0
+
+            print(
+                "Turn complete: "
+                f"change={math.degrees(turn.change):.1f} deg, "
+                f"error={math.degrees(turn.error):.1f} deg"
+            )
+
+            if MODE in ("turn_left", "turn_right"):
+                state = "DONE"
+            else:
+                state = "RECHECK"
+
+            state_started = now
+
+    elif state == "RECHECK":
+        if now - state_started >= RECHECK_SECONDS:
+            if front_distance > RESUME_DISTANCE:
+                state = "FORWARD"
+                turn_attempts = 0
+                print("Front clear. Continuing forward.")
+            else:
+                state = "CHOOSE_TURN"
+                print("Front still blocked. Rechecking sides.")
+
+            state_started = now
+
+    elif state in ("DONE", "FAULT"):
+        # Remain stopped until the simulation is reset.
+        pass
+
+    # Apply the final wheel commands once per iteration.
+    if state in ("READ_ONLY", "DONE", "FAULT"):
+        command_left = 0.0
+        command_right = 0.0
+
+    elif direct_turn_commands:
+        command_left = desired_left
+        command_right = desired_right
 
     else:
-        state = "Approaching obstacle"
-
-        # Scale the desired speed as the obstacle gets closer.
-        fraction = (
-            (distance - STOP_DISTANCE)
-            / (SLOW_DISTANCE - STOP_DISTANCE)
+        command_left = move_toward(
+            command_left,
+            desired_left,
+            max_speed_change
         )
 
-        target_speed = min(
-            MAX_SPEED,
-            max(MIN_APPROACH_SPEED, MAX_SPEED * fraction)
+        command_right = move_toward(
+            command_right,
+            desired_right,
+            max_speed_change
         )
 
-    if immediate_stop:
-        command_speed = 0.0
-    else:
-        # Gradually change the speed command.
-        difference = target_speed - command_speed
-        change = max(
-            -max_speed_change,
-            min(max_speed_change, difference)
-        )
-        command_speed += change
+    # Set the wheel speeds for this iteration.
+    left_motor.setVelocity(command_left)
+    right_motor.setVelocity(command_right)
 
-    left_motor.setVelocity(command_speed)
-    right_motor.setVelocity(command_speed)
-
+    # Report the current state and sensor readings at a fixed interval.
     if now - last_report >= REPORT_INTERVAL:
-        left_distance = left_sensor.getValue()
-        right_distance = right_sensor.getValue()
-        distance_text = (
-            f"{distance:.3f} m"
-            if valid_reading
-            else "INVALID"
-        )
-
         print(
             f"{state} | "
-            f"front={distance_text} | "
+            f"front={front_distance:.3f} m | "
             f"left={left_distance:.3f} m | "
             f"right={right_distance:.3f} m | "
-            f"wheel command={command_speed:.2f} rad/s"
+            f"yaw={math.degrees(yaw):.1f} deg | "
+            f"pitch={math.degrees(pitch):.1f} deg | "
+            f"motors=({command_left:.2f}, "
+            f"{command_right:.2f})"
         )
+
+        if state == "FAULT":
+            print(f"Reason: {fault_reason}")
+
         last_report = now
