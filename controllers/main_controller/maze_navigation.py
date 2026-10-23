@@ -3,6 +3,15 @@
 import math
 from statistics import median
 
+from floor_detection import read_floor
+from floor_map import (
+    FLOOR_SAMPLES,
+    FloorMap,
+    FloorObservationConflict,
+    DuplicateEndCell,
+    bfs_path,
+    consensus,
+)
 from movement import MoveForward
 from turning import Turn90, angle_difference
 
@@ -103,6 +112,22 @@ def run_maze(robot, time_step=16):
 
     imu = robot.getDevice("imu")
     imu.enable(time_step)
+
+    # Camera for floor-colour classification (added by maze_vision branch).
+    camera = robot.getDevice("floor_camera")
+    camera.enable(time_step)
+
+    floor_map = FloorMap(ROWS, COLUMNS)
+    floor_samples = []
+
+    # Return-leg state.
+    return_path = []   # BFS hops remaining (cells after current, in order)
+    returning = False
+    led_done = False
+
+    # Handles for the LEDs (same devices initialised below).
+    led_blue = robot.getDevice("led_blue")
+    led_green = robot.getDevice("led_green")
 
     # Each cell stores N/E/S/W walls:
     # None = unknown, True = wall, False = opening.
@@ -250,7 +275,23 @@ def run_maze(robot, time_step=16):
                             f"walls[N,E,S,W]={walls[current]}"
                         )
 
-                        state = "PLAN"
+                        floor_samples = []
+                        state = "SCAN_FLOOR"
+
+            elif state == "SCAN_FLOOR":
+                # Collect camera frames while the robot is stationary.
+                # Motors remain at 0.0 (no speed assignments in this branch).
+                floor_samples.append(read_floor(camera))
+
+                if len(floor_samples) >= FLOOR_SAMPLES:
+                    label = consensus(floor_samples)
+                    if label is not None:
+                        try:
+                            floor_map.record(current, label)
+                        except (FloorObservationConflict, DuplicateEndCell) as exc:
+                            raise RuntimeError(str(exc)) from exc
+
+                    state = "PLAN"
 
             elif state == "PLAN":
                 destination = None
@@ -283,7 +324,55 @@ def run_maze(robot, time_step=16):
                             f"visited {len(visited)} cells; "
                             "returned to entrance."
                         )
-                        return
+
+                        # Determine majority before starting the return leg so
+                        # the LED result is ready at arrival.
+                        majority = floor_map.majority()
+                        end = floor_map.end_cell
+
+                        if end is None:
+                            print(
+                                "MAZE STOPPED: No end-cell candidate found. "
+                                "No LED will be lit."
+                            )
+                            return
+
+                        route = bfs_path(walls, current, end, ROWS, COLUMNS)
+                        if route is None:
+                            print(
+                                f"MAZE STOPPED: End cell {end} is unreachable "
+                                "via confirmed passages. No LED will be lit."
+                            )
+                            return
+
+                        if majority is None:
+                            print(
+                                "MAZE STOPPED: Tile counts are tied or zero. "
+                                "No LED will be lit."
+                            )
+                            return
+
+                        print(
+                            f"RETURNING to end cell {end}; "
+                            f"majority={majority}; "
+                            f"route length={len(route)}"
+                        )
+
+                        # If the robot is already at the end cell (end == (0,0))
+                        # the BFS path is empty; go straight to FINISHED.
+                        if not route:
+                            state = "FINISHED"
+                        else:
+                            returning = True
+                            return_path = list(route)
+                            destination = return_path.pop(0)
+                            diff = (
+                                destination[0] - current[0],
+                                destination[1] - current[1],
+                            )
+                            destination_heading = DIRECTIONS.index(diff)
+                            state = "ALIGN"
+                        continue
 
                     destination = path[-2]
                     backtracking = True
@@ -381,19 +470,60 @@ def run_maze(robot, time_step=16):
                     record_wall(current, heading, False)
                     current = destination
 
-                    if backtracking:
+                    if returning:
+                        # DFS stack is finished; don't modify path.
+                        print(f"RETURN ARRIVED at {current}")
+                        action = None
+                        left_speed = 0.0
+                        right_speed = 0.0
+
+                        if return_path:
+                            # Advance to the next hop in the BFS route.
+                            destination = return_path.pop(0)
+                            diff = (
+                                destination[0] - current[0],
+                                destination[1] - current[1],
+                            )
+                            destination_heading = DIRECTIONS.index(diff)
+                            state = "ALIGN"
+                        else:
+                            # Reached the end cell.
+                            state = "FINISHED"
+
+                    elif backtracking:
                         path.pop()
+                        print(f"ARRIVED at {current}")
+                        action = None
+                        scan_samples = []
+                        state = "SCAN"
+                        state_started = now
+                        left_speed = 0.0
+                        right_speed = 0.0
+
                     else:
                         path.append(current)
+                        print(f"ARRIVED at {current}")
+                        action = None
+                        scan_samples = []
+                        state = "SCAN"
+                        state_started = now
+                        left_speed = 0.0
+                        right_speed = 0.0
 
-                    print(f"ARRIVED at {current}")
-
-                    action = None
-                    scan_samples = []
-                    state = "SCAN"
-                    state_started = now
-                    left_speed = 0.0
-                    right_speed = 0.0
+            elif state == "FINISHED":
+                # Motors stay at zero (no speed assignments here).
+                if not led_done:
+                    led_blue.set(0)
+                    led_green.set(0)
+                    if majority == "blue":
+                        led_blue.set(1)
+                        print("FINISHED: majority=blue; led_blue ON.")
+                    elif majority == "green":
+                        led_green.set(1)
+                        print("FINISHED: majority=green; led_green ON.")
+                    else:
+                        print("FINISHED: no valid majority; both LEDs off.")
+                    led_done = True
 
             left_motor.setVelocity(left_speed)
             right_motor.setVelocity(right_speed)
