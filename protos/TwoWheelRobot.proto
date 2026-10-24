@@ -53,13 +53,13 @@ PROTO TwoWheelRobot [
       name "imu"
     }
     Camera {
-      translation 0.025 0 0.06
+      translation 0.02 0 0.018
       rotation 0 1 0 1.5708
       name "floor_camera"
       width 64
       height 64
       fieldOfView 1.0
-      near 0.01
+      near 0.002
     }
   ]
 ] {

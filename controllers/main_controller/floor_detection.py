@@ -1,17 +1,15 @@
+"""Floor colours from a downward camera, including shaded tiles."""
 
-def read_floor(camera):
-    """
-    Detect the floor colour using the robot's camera.
+import math
 
-    Returns:
-        "red", "green", "blue",
-        "black", "white", or "unknown"
-    """
+
+def read_floor_rgb(camera):
+    """Average the central 7x7 pixels; return None until an image exists."""
 
     image = camera.getImage()
 
     if image is None:
-        return "unknown"
+        return None
 
     width = camera.getWidth()
     height = camera.getHeight()
@@ -39,31 +37,49 @@ def read_floor(camera):
             count += 1
 
     if count == 0:
+        return None
+
+    return (red_total / count, green_total / count, blue_total / count)
+
+
+def classify_floor_rgb(rgb):
+    """Use channel dominance before brightness to preserve dark colours.
+
+    Under-chassis shadows can reduce a green/blue tile below the former
+    absolute 60/255 cutoff. Saturated colours remain distinguishable from
+    the neutral black floor at these brightness levels. Near-black noise,
+    weak colour casts, and orange chassis pixels are not tile evidence.
+    """
+    if rgb is None:
         return "unknown"
 
-    # Calculate average RGB values.
-    r = red_total / count
-    g = green_total / count
-    b = blue_total / count
+    r, g, b = rgb
+    if not all(math.isfinite(v) and 0 <= v <= 255 for v in rgb):
+        return "unknown"
+
+    brightest = max(rgb)
+    darkest = min(rgb)
+    chromatic = brightest >= 20 and brightest - darkest >= 12
+
+    # Require red to be well separated from orange/yellow as well as blue.
+    if chromatic and r > 2.2 * g and r > 1.5 * b:
+        return "red"
+    if chromatic and g > 1.5 * r and g > 1.5 * b:
+        return "green"
+    if chromatic and b > 1.5 * r and b > 1.5 * g:
+        return "blue"
 
     # Detect black.
-    if max(r, g, b) < 50:
+    if brightest < 50 and brightest - darkest < 12:
         return "black"
 
     # Detect white.
-    if min(r, g, b) > 170 and max(r, g, b) - min(r, g, b) < 50:
+    if darkest > 170 and brightest - darkest < 50:
         return "white"
 
-    # Detect red.
-    if r > 70 and r > g * 1.5 and r > b * 1.5:
-        return "red"
-
-    # Detect green.
-    if g > 60 and g > r * 1.3 and g > b * 1.3:
-        return "green"
-
-    # Detect blue.
-    if b > 60 and b > r * 1.3 and b > g * 1.3:
-        return "blue"
-
     return "unknown"
+
+
+def read_floor(camera):
+    """Return red, green, blue, black, white, or unknown."""
+    return classify_floor_rgb(read_floor_rgb(camera))

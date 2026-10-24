@@ -3,7 +3,7 @@
 import math
 from statistics import median
 
-from floor_detection import read_floor
+from floor_detection import classify_floor_rgb, read_floor_rgb
 from floor_map import (
     FLOOR_SAMPLES,
     FloorMap,
@@ -34,6 +34,8 @@ HEADING_NAMES = ("N", "E", "S", "W")
 MAX_TILT = math.radians(10)
 SCAN_DELAY = 0.3
 SCAN_SAMPLES = 12
+FLOOR_SCAN_ATTEMPTS = 3
+FLOOR_RETRY_DELAY = 0.25
 
 
 class CardinalTurn(Turn90):
@@ -113,12 +115,13 @@ def run_maze(robot, time_step=16):
     imu = robot.getDevice("imu")
     imu.enable(time_step)
 
-    # Camera for floor-colour classification (added by maze_vision branch).
+    # Downward camera for floor-colour classification.
     camera = robot.getDevice("floor_camera")
     camera.enable(time_step)
 
     floor_map = FloorMap(ROWS, COLUMNS)
     floor_samples = []
+    floor_scan_attempts = 0
 
     # Return-leg state.
     return_path = []   # BFS hops remaining (cells after current, in order)
@@ -276,20 +279,61 @@ def run_maze(robot, time_step=16):
                         )
 
                         floor_samples = []
+                        floor_scan_attempts = 0
                         state = "SCAN_FLOOR"
+                        state_started = now
 
             elif state == "SCAN_FLOOR":
-                # Collect camera frames while the robot is stationary.
-                # Motors remain at 0.0 (no speed assignments in this branch).
-                floor_samples.append(read_floor(camera))
+                # A short stationary retry allows transient frames to clear.
+                if now - state_started < FLOOR_RETRY_DELAY:
+                    continue
+
+                rgb = read_floor_rgb(camera)
+                floor_samples.append(classify_floor_rgb(rgb))
 
                 if len(floor_samples) >= FLOOR_SAMPLES:
                     label = consensus(floor_samples)
-                    if label is not None:
-                        try:
-                            floor_map.record(current, label)
-                        except (FloorObservationConflict, DuplicateEndCell) as exc:
-                            raise RuntimeError(str(exc)) from exc
+                    floor_scan_attempts += 1
+                    rgb_report = (
+                        None if rgb is None
+                        else tuple(round(v, 1) for v in rgb)
+                    )
+
+                    print(
+                        f"FLOOR | cell={current} | "
+                        f"samples={floor_samples} | "
+                        f"confirmed={label} | "
+                        f"rgb={rgb_report} | "
+                        f"attempt={floor_scan_attempts}/{FLOOR_SCAN_ATTEMPTS}"
+                    )
+
+                    if label is None:
+                        if floor_scan_attempts < FLOOR_SCAN_ATTEMPTS:
+                            floor_samples = []
+                            state_started = now
+                            print(
+                                f"Retrying floor scan at {current}; "
+                                "holding stopped."
+                            )
+                            continue
+                        raise RuntimeError(
+                            f"Cannot confirm floor colour at {current} after "
+                            f"{FLOOR_SCAN_ATTEMPTS} scans; RGB={rgb}. "
+                            "Check the floor-camera image and colour thresholds."
+                        )
+
+                    try:
+                        floor_map.record(current, label)
+                    except (
+                        FloorObservationConflict,
+                        DuplicateEndCell,
+                    ) as exc:
+                        raise RuntimeError(str(exc)) from exc
+
+                    print(
+                        f"TILES | {floor_map.counts()} | "
+                        f"end={floor_map.end_cell}"
+                    )
 
                     state = "PLAN"
 
@@ -329,6 +373,10 @@ def run_maze(robot, time_step=16):
                         # the LED result is ready at arrival.
                         majority = floor_map.majority()
                         end = floor_map.end_cell
+                        print(
+                            f"EXPLORATION RESULT | tiles={floor_map.counts()} | "
+                            f"end={end}"
+                        )
 
                         if end is None:
                             print(
