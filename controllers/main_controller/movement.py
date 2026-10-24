@@ -12,7 +12,16 @@ class MoveForward:
         left_position,
         right_position,
         yaw,
+        *,
+        max_speed=2.0,
+        acceleration=1.0,
     ):
+        if not all(math.isfinite(v) and v > 0 for v in (max_speed, acceleration)):
+            raise ValueError(
+                "Movement speed and acceleration must be positive and finite"
+            )
+        self.max_speed = max_speed
+        self.acceleration = acceleration
         self.target_distance = target_distance
         self.start_time = start_time
         self.previous_time = start_time
@@ -122,24 +131,32 @@ class MoveForward:
             elif now - self.last_progress_time > 5.0:
                 return self.stop_with_fault("No encoder progress")
 
+            # Convert the remaining distance to wheel angle before applying
+            # v^2 = 2*a*s. Brake early enough to stop at the cell centre,
+            # instead of raising cruise speed with the old slow approach.
+            braking_speed = math.sqrt(
+                2.0 * self.acceleration * max(0.0, remaining - 0.002)
+                / wheel_radius
+            )
             base_speed = min(
-                0.5,
-                max(0.1, 20.0 * remaining)
+                self.max_speed,
+                braking_speed,
+                max(0.1, 80.0 * remaining),
             )
 
             correction = max(
-                -0.15,
-                min(0.15, 2.0 * heading_error)
+                -0.3,
+                min(0.3, 4.0 * heading_error)
             )
 
             desired_left = max(
                 0.0,
-                min(0.5, base_speed - correction)
+                min(self.max_speed, base_speed - correction)
             )
 
             desired_right = max(
                 0.0,
-                min(0.5, base_speed + correction)
+                min(self.max_speed, base_speed + correction)
             )
 
             self.status = "Moving"
@@ -149,7 +166,7 @@ class MoveForward:
             desired_right = 0.0
             self.status = "Settling at target"
 
-        max_change = 0.25 * dt
+        max_change = self.acceleration * dt
 
         self.left_command += max(
             -max_change,

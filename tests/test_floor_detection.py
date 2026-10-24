@@ -229,6 +229,10 @@ class MazeFloorIntegrationTests(unittest.TestCase):
         self.assertEqual(robot.led_events, [("led_green", (1, 2))])
         self.assertIn("tiles={'blue': 1, 'green': 2}", log)
         self.assertIn("RETURNING to end cell (1, 2)", log)
+        # The last new cell is (0,1): take its two-hop final route rather
+        # than backtracking to (0,0) and starting a longer route there.
+        self.assertIn("planning final route from (0, 1)", log)
+        self.assertIn("route length=2", log)
         self.assertNotIn("MAZE STOPPED", log)
 
     def test_temporary_uncertainty_retries_then_completes(self):

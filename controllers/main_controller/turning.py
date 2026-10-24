@@ -9,9 +9,21 @@ def angle_difference(target, current):
 class Turn90:
     """Call update once per simulation step and apply its wheel velocities."""
 
-    def __init__(self, direction, start_time):
+    def __init__(
+        self, direction, start_time, *, max_speed=1.0,
+        acceleration=1.0, settle_seconds=0.25,
+    ):
         if direction not in ("left", "right"):
             raise ValueError("Turn direction must be left or right")
+        if not all(math.isfinite(v) and v > 0 for v in (max_speed, acceleration)):
+            raise ValueError(
+                "Turn speed and acceleration must be positive and finite"
+            )
+        if not math.isfinite(settle_seconds) or settle_seconds < 0:
+            raise ValueError("Turn settling time must be nonnegative and finite")
+        self.max_speed = max_speed
+        self.acceleration = acceleration
+        self.settle_seconds = settle_seconds
         self.direction = 1 if direction == "left" else -1
         self.start_time = start_time
         self.previous_time = start_time
@@ -32,7 +44,7 @@ class Turn90:
         self.previous_time = now
         if self.complete or self.fault:
             return 0.0, 0.0
-        if now - self.start_time < 1.0:
+        if now - self.start_time < self.settle_seconds:
             self.previous_yaw = yaw if math.isfinite(yaw) else None
             return 0.0, 0.0
         if not math.isfinite(yaw):
@@ -64,11 +76,19 @@ class Turn90:
             return 0.0, 0.0
 
         within_tolerance = abs(self.error) <= math.radians(2)
+        # Differential-drive yaw rate = 2 * wheel_radius / axle_length * speed.
+        # Limit the turn speed by the remaining angle as well as the cruise cap.
+        braking_speed = math.sqrt(
+            self.acceleration * 0.064 * abs(self.error) / 0.02
+        )
         desired_speed = (
             0.0 if within_tolerance
-            else max(-0.5, min(0.5, 1.2 * self.error))
+            else math.copysign(
+                min(self.max_speed, braking_speed, 2.5 * abs(self.error)),
+                self.error,
+            )
         )
-        max_change = 0.25 * dt
+        max_change = self.acceleration * dt
         self.speed += max(
             -max_change, min(max_change, desired_speed - self.speed)
         )

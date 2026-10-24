@@ -48,7 +48,7 @@ class CardinalTurn(Turn90):
     def update(self, now, yaw):
         if (
             self.target_yaw is None
-            and now - self.start_time >= 1.0
+            and now - self.start_time >= self.settle_seconds
             and math.isfinite(yaw)
         ):
             self.start_yaw = yaw
@@ -158,6 +158,8 @@ def run_maze(robot, time_step=16):
 
     state = "SETTLING"
     state_started = robot.getTime()
+    run_started = state_started
+    peak_tilt = 0.0
     scan_samples = []
     last_report = -1.0
 
@@ -201,6 +203,8 @@ def run_maze(robot, time_step=16):
             }
 
             roll, pitch, yaw = imu.getRollPitchYaw()
+            if math.isfinite(roll) and math.isfinite(pitch):
+                peak_tilt = max(peak_tilt, abs(roll), abs(pitch))
             left_position = left_encoder.getValue()
             right_position = right_encoder.getValue()
 
@@ -362,11 +366,13 @@ def run_maze(robot, time_step=16):
                         break
 
                 if destination is None:
-                    if len(path) == 1:
+                    if len(path) == 1 or len(visited) == ROWS * COLUMNS:
+                        # Once every grid cell has been scanned, plan from
+                        # here rather than backtracking to the entrance first.
                         print(
                             "EXPLORATION COMPLETE: "
                             f"visited {len(visited)} cells; "
-                            "returned to entrance."
+                            f"planning final route from {current}."
                         )
 
                         # Determine majority before starting the return leg so
@@ -406,7 +412,7 @@ def run_maze(robot, time_step=16):
                             f"route length={len(route)}"
                         )
 
-                        # If the robot is already at the end cell (end == (0,0))
+                        # If the robot is already at the end cell,
                         # the BFS path is empty; go straight to FINISHED.
                         if not route:
                             state = "FINISHED"
@@ -572,6 +578,11 @@ def run_maze(robot, time_step=16):
                     else:
                         print("FINISHED: no valid majority; both LEDs off.")
                     led_done = True
+                    print(
+                        f"RUN RESULT | elapsed={now - run_started:.3f} s | "
+                        f"visited={len(visited)} | tiles={floor_map.counts()} | "
+                        f"peak_tilt={math.degrees(peak_tilt):.2f} deg"
+                    )
 
             left_motor.setVelocity(left_speed)
             right_motor.setVelocity(right_speed)
