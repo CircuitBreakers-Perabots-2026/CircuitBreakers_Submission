@@ -9,3 +9,4 @@ orthographicViewHeight: 1
 textFiles: 0 "controllers/main_controller/main_controller.py"
 globalOptionalRendering: DistanceSensorRays
 consoles: Console:All:All
+renderingDevicePerspectives: team_robot_template:floor_camera;1;1;0;0
