@@ -19,6 +19,28 @@ from maze_navigation import CardinalTurn
 
 
 class MotionTests(unittest.TestCase):
+    def test_final_cell_stop_and_led_budget_after_full_body_entry(self):
+        for dt in (0.016, 0.032, 0.064):
+            with self.subTest(dt=dt):
+                move = MoveForward(0.22, 0, 0, 0, 0)
+                now = position = 0.0
+                entered_at = None
+                while now < 12:
+                    now += dt
+                    commands = move.update(now, position, position, 0, 1)
+                    # Include 11mm of longitudinal positioning uncertainty:
+                    # nominal whole-body entry is at about 0.171m.
+                    if position * 0.02 >= 0.16 and entered_at is None:
+                        entered_at = now
+                    position += sum(commands) / 2 * dt
+                    if move.complete or move.fault:
+                        break
+                self.assertTrue(move.complete)
+                self.assertIsNone(move.fault)
+                self.assertIsNotNone(entered_at)
+                self.assertLess(now - entered_at + dt, 3)
+                self.assertLess(abs(position * 0.02 - 0.25) + 0.04, 0.119)
+
     def test_cell_move_brakes_to_target_with_bounded_acceleration(self):
         for dt in (0.016, 0.032, 0.064):
             with self.subTest(dt=dt):

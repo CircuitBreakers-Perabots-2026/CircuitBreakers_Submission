@@ -3,6 +3,8 @@ from turning import Turn90
 from movement import MoveForward
 from sequence import ActionSequence
 import math
+import sys
+from competition import parse_mode
 
 TIME_STEP = 16
 
@@ -15,7 +17,11 @@ TIME_STEP = 16
 # "move_cell"  : move forward by a specified distance
 # "sequence"   : run a sequence of actions
 # "maze"       : navigate through a maze
-MODE = "maze"  # Change this to test different modes
+# "full"       : select the section automatically and complete the course
+# "section1"   : stop after verifying the first maze cell
+# "auto"       : alias for full
+# Automatically supports both the full course and dedicated maze attempts.
+MODE = parse_mode("full", sys.argv[1:])
 
 SETTLE_SECONDS = 1.0
 REPORT_INTERVAL = 0.25
@@ -48,6 +54,9 @@ VALID_MODES = {
     "move_cell",
     "sequence",
     "maze",
+    "full",
+    "auto",
+    "section1",
 }
 
 if MODE not in VALID_MODES:
@@ -68,6 +77,12 @@ def valid_distance(value):
 
 
 robot = Robot()
+
+if MODE in ("full", "auto", "section1"):
+    from competition import run_course
+
+    run_course(robot, TIME_STEP, MODE)
+    raise SystemExit
 
 if MODE == "maze":
     from maze_navigation import run_maze
