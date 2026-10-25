@@ -163,8 +163,7 @@ class FloorMap:
         """
         "blue" or "green" from the unique tile counts.
 
-        Returns None for a tie, for zero usable tiles, or when one side
-        is entirely missing -- in those cases no LED may be lit.
+        Returns None for a tie, including when no tiles were recorded.
         """
         blue, green = (self.counts()[label] for label in TILE_LABELS)
         if blue > green:

@@ -192,13 +192,15 @@ class MazeFloorIntegrationTests(unittest.TestCase):
             fault = None
 
             def __init__(self, **kwargs):
-                pass
+                self.target_distance = kwargs["target_distance"]
+                self.distance = 0.0
 
             def update(self, **kwargs):
                 robot.cell = maze.neighbour(robot.cell, robot.heading)
                 if not maze.inside(robot.cell):
                     raise AssertionError("Robot left the fixture grid")
                 self.complete = True
+                self.distance = self.target_distance
                 return (0.0, 0.0)
 
         class Turn:

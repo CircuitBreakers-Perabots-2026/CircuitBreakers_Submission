@@ -19,6 +19,12 @@ from turning import Turn90, angle_difference
 ROWS = 4
 COLUMNS = 9
 CELL_DISTANCE = 0.25
+# The final stop is 30mm before the cell centre, safely inside the 238mm
+# clear area. This avoids spending the 3-second LED deadline creeping all
+# the way to the centre after the whole body has already entered the cell.
+FINAL_CELL_DISTANCE = 0.22
+# Start the deadline conservatively, allowing roughly 1cm of odometry error.
+FINAL_ENTRY_DISTANCE = 0.16
 
 # Heading order: north, east, south, west.
 # Row zero is the entrance-side row.
@@ -87,7 +93,7 @@ def classify_wall(distance):
     )
 
 
-def run_maze(robot, time_step=16):
+def run_maze(robot, time_step=16, *, entry_heading=None):
     left_motor = robot.getDevice("left_wheel_motor")
     right_motor = robot.getDevice("right_wheel_motor")
 
@@ -127,6 +133,7 @@ def run_maze(robot, time_step=16):
     return_path = []   # BFS hops remaining (cells after current, in order)
     returning = False
     led_done = False
+    final_entry_started = None
 
     # Handles for the LEDs (same devices initialised below).
     led_blue = robot.getDevice("led_blue")
@@ -246,7 +253,9 @@ def run_maze(robot, time_step=16):
                         raise RuntimeError("Invalid starting heading")
 
                     # The robot must initially face maze north.
-                    north_yaw = yaw
+                    north_yaw = yaw if entry_heading is None else entry_heading
+                    if not math.isfinite(north_yaw):
+                        raise RuntimeError("Invalid maze-entry heading")
                     state = "SCAN"
                     state_started = now
                     scan_samples = []
@@ -458,7 +467,11 @@ def run_maze(robot, time_step=16):
             elif state == "ALIGN":
                 if heading == destination_heading:
                     action = MoveForward(
-                        target_distance=CELL_DISTANCE,
+                        target_distance=(
+                            FINAL_CELL_DISTANCE
+                            if returning and not return_path
+                            else CELL_DISTANCE
+                        ),
                         start_time=now,
                         left_position=left_position,
                         right_position=right_position,
@@ -520,6 +533,10 @@ def run_maze(robot, time_step=16):
                     # Do not advance the map coordinates.
                     raise RuntimeError(action.fault)
 
+                if (returning and not return_path and final_entry_started is None
+                        and action.distance >= FINAL_ENTRY_DISTANCE):
+                    final_entry_started = now
+
                 if action.complete:
                     record_wall(current, heading, False)
                     current = destination
@@ -567,6 +584,11 @@ def run_maze(robot, time_step=16):
             elif state == "FINISHED":
                 # Motors stay at zero (no speed assignments here).
                 if not led_done:
+                    response_time = (
+                        0.0 if final_entry_started is None else now - final_entry_started
+                    )
+                    if response_time > 3.0:
+                        raise RuntimeError("End-cell stop exceeded the 3-second deadline")
                     led_blue.set(0)
                     led_green.set(0)
                     if majority == "blue":
@@ -581,7 +603,8 @@ def run_maze(robot, time_step=16):
                     print(
                         f"RUN RESULT | elapsed={now - run_started:.3f} s | "
                         f"visited={len(visited)} | tiles={floor_map.counts()} | "
-                        f"peak_tilt={math.degrees(peak_tilt):.2f} deg"
+                        f"peak_tilt={math.degrees(peak_tilt):.2f} deg | "
+                        f"final_response={response_time:.3f} s"
                     )
 
             left_motor.setVelocity(left_speed)
