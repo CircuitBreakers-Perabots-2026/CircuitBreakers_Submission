@@ -58,9 +58,6 @@ facing into the maze.
 3. Run the simulation. The default `full` mode identifies the starting
    section from the floor camera and handles the transition automatically.
 
-Open `worlds/MazeTest.wbt` to run the maze on its own. The same default
-controller recognises the maze floor without code changes.
-
 The robot's `controllerArgs` can select a specific mode:
 
 | Mode | Behaviour |
@@ -88,18 +85,4 @@ controllerArgs [ "--mode=maze" ]
 | `controllers/main_controller/movement.py` | Encoder-based forward movement and heading correction. |
 | `controllers/main_controller/turning.py` | Heading-controlled turns. |
 | `protos/` | Arena, obstacle, and robot definitions. |
-| `worlds/` | Full-course and dedicated-maze simulation worlds. |
-| `tests/` | Automated checks and simulation validation records. |
-
-## Validation
-
-Run the automated checks with:
-
-```sh
-python3 -B -m unittest discover -s tests
-```
-
-The checks cover floor classification, tile counting, path planning,
-movement, turning, section selection, entrance verification, and the
-final-cell timing budget. Measured simulation results and their scope
-are recorded in [tests/VALIDATION.md](tests/VALIDATION.md).
+| `worlds/Arena.wbt` | Full-course simulation world. |
