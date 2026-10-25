@@ -286,6 +286,103 @@ def inspection_points():
     return result
 
 
+def survey_points():
+    """Viewpoints across the field, plus close boundary inspections as fallback."""
+    inset = 0.13
+    axes = []
+    for lo, hi in (ARENA_X, ARENA_Y):
+        count = math.ceil((hi - lo - 2 * inset) / 0.25)
+        axes.append([lo + inset + i * (hi - lo - 2 * inset) / count
+                     for i in range(count + 1)])
+    return list(dict.fromkeys([(x, y) for x in axes[0] for y in axes[1]]
+                              + inspection_points()))
+
+
+def boundary_samples():
+    """Uniform samples of all four boundaries; no exit location is assumed."""
+    points = []
+    for lo, hi, horizontal in ((*ARENA_X, True), (*ARENA_Y, False)):
+        count = math.ceil((hi - lo) / RES)
+        for i in range(count + 1):
+            along = lo + i * (hi - lo) / count
+            if horizontal:
+                points.extend(((along, ARENA_Y[0]), (along, ARENA_Y[1])))
+            else:
+                points.extend(((ARENA_X[0], along), (ARENA_X[1], along)))
+    return list(dict.fromkeys(points))
+
+
+def visible_boundary_gain(grid, position, unknown_boundary):
+    """Estimate how much unobserved boundary a short scan could reveal."""
+    gain = 0
+    for point in unknown_boundary:
+        distance = math.dist(position, point)
+        if distance > MAP_RANGE - 0.1:
+            continue
+        steps = max(1, math.ceil(distance / RES))
+        for i in range(1, steps + 1):
+            fraction = i / steps
+            cell = cell_of(position[0] + fraction * (point[0] - position[0]),
+                           position[1] + fraction * (point[1] - position[1]))
+            # A sensor ray is blocked by the obstacle, not its clearance halo.
+            if cell in grid.occupied:
+                break
+        else:
+            gain += 1
+    return gain
+
+
+def opening_route(grid, position, inspected):
+    """Prioritise a measured opening over further exploration."""
+    openings = [point for point, _ in boundary_openings(grid)
+                if not any(math.dist(point, old) < 0.10 for old in inspected)]
+    for point in sorted(openings, key=lambda p: math.dist(position, p)):
+        route, level = find_route(grid, position, point, GOAL_TOLERANCE)
+        if route:
+            return point, route, level
+    return None
+
+
+def exploration_route(grid, position, candidates, inspected):
+    """Choose boundary information per metre of planned travel, not edge order."""
+    opening = opening_route(grid, position, inspected)
+    if opening is not None:
+        return opening
+    remaining = [point for point in candidates
+                 if not any(math.dist(point, old) < 0.10 for old in inspected)]
+    unknown = [point for point in boundary_samples()
+               if abs(grid.logodds.get(cell_of(*point), 0.0)) < 0.1]
+    ranked = []
+    for point in remaining:
+        if grid.blocked(cell_of(*point), len(RADII_CELLS) - 1):
+            continue
+        gain = visible_boundary_gain(grid, point, unknown)
+        if gain:
+            # Include the cost of braking, turning and scanning rather than
+            # preferring many tiny moves that reveal little new boundary.
+            score = gain / (math.dist(position, point) + 0.35)
+            ranked.append((score, gain, point))
+    best_score, best = 0.0, None
+    for upper_score, gain, point in sorted(ranked, reverse=True):
+        if best is not None and upper_score < best_score:
+            break
+        route, level = find_route(grid, position, point, GOAL_TOLERANCE)
+        if route:
+            length = sum(math.dist(a, b) for a, b in zip(route, route[1:]))
+            length += math.dist(route[-1], point)
+            score = gain / (length + 0.35)
+            if score > best_score:
+                best_score, best = score, (point, route, level)
+    if best is not None:
+        return best
+    # If a boundary opening was missed or occluded, inspect nearby positions.
+    for point in sorted(remaining, key=lambda p: math.dist(position, p)):
+        route, level = find_route(grid, position, point, GOAL_TOLERANCE)
+        if route:
+            return point, route, level
+    raise RuntimeError("No reachable unexplored viewpoint or sensed opening")
+
+
 def boundary_openings(grid):
     """Find runs of observed free cells crossing an outer boundary."""
     found = []
@@ -466,17 +563,30 @@ def entrance_handoff(io, north):
     io.turn_to(north)
     start = io.travelled
     stable = 0
-    while stable < 5:
+    nx, ny = math.cos(north), math.sin(north)
+    boundary = max(x * nx + y * ny for x in ARENA_X for y in ARENA_Y)
+    while True:
         io.frame()
+        if io.travelled - start > 0.20 or io.readings["front"] < 0.05:
+            raise RuntimeError("Could not verify the transition corridor")
         left, right = io.readings["left"], io.readings["right"]
         gap = left + right + 0.09
         good = left < 0.16 and right < 0.16 and abs(gap - 0.238) < 0.025
+        # Get past the boundary wall's front face before measuring its sides.
+        # Otherwise a beam can hit a corner and suggest a false lateral shift.
+        good = good and io.x * nx + io.y * ny - boundary >= 0.02
         stable = stable + 1 if good else 0
-        if io.travelled - start > 0.20 or io.readings["front"] < 0.05:
-            raise RuntimeError("Could not verify the transition corridor")
+        if stable >= 5:
+            io.hold()
+            left, right = io.readings["left"], io.readings["right"]
+            gap = left + right + 0.09
+            if left < 0.16 and right < 0.16 and abs(gap - 0.238) < 0.025:
+                break
+            # A beam can briefly clip a wall's front corner while braking.
+            # Check again at rest before using it to measure lateral offset.
+            stable = 0
         correction = max(-0.2, min(0.2, 4 * angle_difference(north, io.yaw)))
         io.wheels(0.6 - correction, 0.6 + correction)
-    io.hold()
     shift = (io.readings["right"] - io.readings["left"]) / 2
     if abs(shift) > 0.045:
         raise RuntimeError("Transition is too far off centre for a safe handoff")
@@ -535,7 +645,7 @@ def nearest_boundary_normal(x, y):
 def run_obstacle_field(robot, time_step=16):
     """Return a verified MazeEntrance; never report success after a fault."""
     io = NavigationIO(robot, time_step)
-    inspections = inspection_points()
+    inspections = survey_points()
     inspected = set()
     target = None
     path = []
@@ -546,22 +656,13 @@ def run_obstacle_field(robot, time_step=16):
     red_reads = 0
     recoveries = 0
     rotating = False
+    last_opening_check = -1.0
 
     def choose_target():
         for point in inspections:
             if math.dist((io.x, io.y), point) < 0.08:
                 inspected.add(point)
-        openings = [(p, heading) for p, heading in boundary_openings(io.grid)
-                    if not any(math.dist(p, old) < 0.10 for old in inspected)]
-        options = sorted(openings, key=lambda p: math.dist((io.x, io.y), p[0]))
-        options += [(p, None) for p in sorted(inspections,
-                    key=lambda p: math.dist((io.x, io.y), p))
-                    if not any(math.dist(p, old) < 0.10 for old in inspected)]
-        for point, _ in options:
-            route, level = find_route(io.grid, (io.x, io.y), point, GOAL_TOLERANCE)
-            if route:
-                return point, route, level
-        raise RuntimeError("No reachable unexplored perimeter or sensed opening")
+        return exploration_route(io.grid, (io.x, io.y), inspections, inspected)
 
     try:
         io.hold(1.0)
@@ -589,6 +690,8 @@ def run_obstacle_field(robot, time_step=16):
             if target is not None and (math.dist((io.x, io.y), target) < 0.06
                                       or (path and math.dist((io.x, io.y), path[-1]) < 0.035)):
                 inspected.add(target)
+                if inside_arena(*target):
+                    io.scan()
                 target, path = None, []
 
             if io.readings["front"] < FRONT_STOP:
@@ -607,6 +710,17 @@ def run_obstacle_field(robot, time_step=16):
                     raise RuntimeError("Repeated obstacle recovery without reaching the transition")
                 io.scan()
                 target, path = None, []
+
+            if (target is not None and inside_arena(*target)
+                    and io.now - last_opening_check >= 1.0):
+                last_opening_check = io.now
+                opening = opening_route(io.grid, (io.x, io.y), inspected)
+                if opening is not None:
+                    io.brake()
+                    target, path, path_level = opening
+                    if len(path) > 1:
+                        path.pop(0)
+                    checked_version, last_plan = io.grid.version, io.now
 
             if path and io.grid.version != checked_version and io.now - last_plan > 0.3:
                 checked_version = io.grid.version

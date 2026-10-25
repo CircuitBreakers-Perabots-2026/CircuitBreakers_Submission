@@ -20,9 +20,16 @@ occupancy grid. A* finds routes around obstacles, with clearance for the
 robot's body, and path smoothing reduces unnecessary turns.
 
 The robot searches the arena boundary for the transition opening rather
-than following a fixed route. At the opening, it centres between the
-walls and uses the floor camera to detect the red-to-black edge. It
-checks its heading and first-cell position before beginning the maze.
+than following a fixed route. It chooses viewpoints across the field by
+weighing how much unseen boundary they could reveal against the planned
+travel distance. This allows diagonal shortcuts instead of inspecting
+every neighbouring perimeter point. A detected opening takes priority
+over further exploration.
+
+At the opening, the robot confirms the corridor measurements after
+braking, centres between the walls, and uses the floor camera to detect
+the red-to-black edge. It checks its heading and first-cell position
+before beginning the maze.
 
 ### Section 2: maze exploration
 
