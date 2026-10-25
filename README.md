@@ -1,118 +1,105 @@
-# CircuitBreakers PeraBots controller
+# CircuitBreakers — PeraBots 2026
 
-The controller combines autonomous obstacle navigation and maze exploration
-in the required `controllers/main_controller/` folder.
+An autonomous two-wheel robot controller for the PeraBots university
+challenge in Webots R2025a. The robot navigates an obstacle field, enters
+a maze, counts coloured floor tiles, and stops at the end cell with the
+LED matching the more frequent colour.
 
-## Run in Webots R2025a
+![PeraBots arena showing the obstacle field and the maze](docs/images/arena.jpg)
 
-1. Open `worlds/Arena.wbt`.
-2. Reload or reset the world to its saved starting pose.
-3. Run the simulation. The default `full` mode selects the starting section
-   from the floor camera. No code changes are needed between attempts.
-4. Section 1 explores a range-sensor occupancy map, plans with A*, detects
-   the transition opening, centres between its walls, and measures the
-   red-to-black floor edge to position the robot in the first maze cell.
-5. Only a verified entrance permits the continuous handoff to Section 2.
-6. Section 2 maps and explores the maze, counts each coloured cell once,
-   plans its final route, and stops fully inside the end cell with the
-   majority LED on.
+The white floor is the obstacle-navigation section. The black floor is
+the maze, with blue and green tiles and a red end cell.
 
-For a dedicated Section 2 test, open `worlds/MazeTest.wbt` and run. Its black
-starting floor selects maze mode automatically. The starting robot must be
-at the designated first-cell centre facing into the maze.
+## How it works
 
-Optional `controllerArgs` on the robot, for development:
+### Section 1: obstacle navigation
+
+Six distance sensors measure the space around the robot. Wheel encoders
+and an inertial unit estimate its position and heading as it builds an
+occupancy grid. A* finds routes around obstacles, with clearance for the
+robot's body, and path smoothing reduces unnecessary turns.
+
+The robot searches the arena boundary for the transition opening rather
+than following a fixed route. At the opening, it centres between the
+walls and uses the floor camera to detect the red-to-black edge. It
+checks its heading and first-cell position before beginning the maze.
+
+### Section 2: maze exploration
+
+The robot explores the 4 × 9 maze using depth-first search and
+backtracking. At each cell, it records walls from the front and side
+distance sensors and classifies the floor using several camera samples.
+Blue and green tiles are counted once per cell.
+
+After all cells have been visited, breadth-first search finds the shortest
+route through the mapped maze to the detected red end cell. The robot
+stops fully inside that cell and activates the blue or green LED according
+to the tile counts. A conservative entry timer checks the three-second
+stop-and-LED requirement. A tie or an unconfirmed end cell produces a
+diagnostic stop instead of a guessed result.
+
+### Motion and sensing
+
+Forward movement uses wheel encoders for distance and inertial feedback
+for heading correction. Turns use absolute cardinal headings in the maze.
+Acceleration limits and gradual braking keep movement stable. Invalid
+sensor readings, excessive tilt, and motion faults stop the robot.
+
+Obstacle positions, maze walls, and coloured-tile locations are learned
+during the run. Section 1 uses the known arena dimensions and assumes the
+supplied starting-zone centre, facing along the long side with the field
+to the robot's right. A dedicated maze run starts at the first-cell centre,
+facing into the maze.
+
+## Running the simulation
+
+1. Open `worlds/Arena.wbt` in **Webots R2025a**.
+2. Reset the simulation to the saved starting pose.
+3. Run the simulation. The default `full` mode identifies the starting
+   section from the floor camera and handles the transition automatically.
+
+Open `worlds/MazeTest.wbt` to run the maze on its own. The same default
+controller recognises the maze floor without code changes.
+
+The robot's `controllerArgs` can select a specific mode:
+
+| Mode | Behaviour |
+| --- | --- |
+| `full` | Detect the starting section and complete the course. Default. |
+| `section1` | Navigate the obstacle field and stop at the verified maze entrance. |
+| `maze` | Begin maze exploration from the designated first cell. |
+
+For example:
 
 ```vrml
-controllerArgs [ "--mode=section1" ]
+controllerArgs [ "--mode=maze" ]
 ```
 
-Modes are `full` (default, including automatic section selection), `maze`
-(explicit dedicated maze attempt), and `section1` (stop after verifying
-the entrance).
+## Project structure
 
-## Navigation and rulebook constraints
+| Path | Purpose |
+| --- | --- |
+| `controllers/main_controller/main_controller.py` | Controller entry point. |
+| `controllers/main_controller/competition.py` | Starting-section selection and continuous handoff. |
+| `controllers/main_controller/obstacle_navigation.py` | Occupancy mapping, A* planning, and entrance alignment. |
+| `controllers/main_controller/maze_navigation.py` | Maze exploration, wall mapping, and final-cell navigation. |
+| `controllers/main_controller/floor_detection.py` | Camera sampling and floor-colour classification. |
+| `controllers/main_controller/floor_map.py` | Unique tile counts, observation checks, and shortest paths. |
+| `controllers/main_controller/movement.py` | Encoder-based forward movement and heading correction. |
+| `controllers/main_controller/turning.py` | Heading-controlled turns. |
+| `protos/` | Arena, obstacle, and robot definitions. |
+| `worlds/` | Full-course and dedicated-maze simulation worlds. |
+| `tests/` | Automated checks and simulation validation records. |
 
-- Section 1 assumes the supplied starting-zone centre, with the robot
-  facing along the long arena side and the field to its right. Known
-  arena dimensions and starting-zone size define an odometry frame.
-  No obstacle positions, transition coordinate, or fixed route are stored.
-- Six permitted distance sensors supply actual obstacle observations.
-  A short initial scan fills gaps between beams. Further scans occur only
-  when planning or recovery needs new information.
-- The planner retains its destination while it remains reachable and
-  keeps robot clearance at every fallback level.
-- Entrance alignment uses the sensed corridor and camera edge, with
-  encoder/IMU measurements. Failures stop the robot and prevent a false
-  successful handoff.
-- The final stop is 30 mm before the end-cell centre, within its clear
-  internal area. This avoids waiting until the centre after the entire
-  robot has entered the cell. A conservative encoder-based timer starts
-  before nominal full-body entry and checks the three-second final
-  stop/LED budget.
-- The supplied red end marker is detected by the camera; blue and green
-  locations and totals are learned during the run. A tie or missing end
-  observation produces a diagnostic stop rather than a guessed LED.
-- Arena.proto and Obstacles.proto retain their original contents.
-  The integration adds only permitted sensors in extensionSlot; it does
-  not change locked mechanics, LEDs, collision shapes, or physics.
-  The previous small balance adjustment to the drive-wheel positions is
-  retained, as permitted by rulebook Section 4.4.
-- Runtime control uses no GPS, Supervisor, emitter, receiver, downloaded
-  map or external command. All helper modules ship in main_controller.
+## Validation
 
-## Team history
-
-Section 1 mapping, inflation, A* and path smoothing were adapted from
-[Perabots-section01](https://github.com/CircuitBreakers-Perabots-2026/Perabots-section01),
-commit `ffcfbcee353edae30a103f42b2539c28cbfaaea8` (Dewmi).
-
-The integration is a merge with both repositories as parents. The original
-teammate commit retains its author, date, message, tree and hash; it has
-not been squashed or rewritten. Integration adaptations preserve the
-tested Section 2 base and correct sensor geometry, transition discovery,
-handoff validation and repeated scanning.
-
-## Automated checks
+Run the automated checks with:
 
 ```sh
 python3 -B -m unittest discover -s tests
 ```
 
-The tests cover colour detection, mapping, shortest paths, motion and
-braking, section selection, successful and failed handoffs, sensor mount
-offsets, openings at different positions, obstacle clearance, scan
-coverage, and the final-cell timing budget. See `tests/VALIDATION.md`
-for measured Webots results and their scope.
-
-## Submission
-
-Use Webots R2025a. Keep the required filenames and folder layout:
-
-```text
-CircuitBreakers_Submission/
-  controllers/main_controller/main_controller.py
-  controllers/main_controller/  (all helper modules)
-  protos/Arena.proto
-  protos/Obstacles.proto
-  protos/TwoWheelRobot.proto
-  worlds/Arena.wbt
-  worlds/MazeTest.wbt
-```
-
-Create an archive from committed main, without caches or local preferences:
-
-```sh
-mkdir -p dist
-git archive --format=zip --prefix=CircuitBreakers_Submission/ --output=dist/CircuitBreakers_Submission.zip main
-```
-
-Extract the archive into a fresh folder and check Arena.wbt and MazeTest.wbt
-before uploading. The default controller detects which section it starts in;
-no controller edits are needed for dedicated maze attempts.
-
-The rulebook lists 28 October as the Phase 1 deadline. It says the final
-archive format, outer filename and submission link will be announced through
-the official PeraBots channels. Check that notice for the closing time and
-any naming/format requirements, then upload through the official submission
-form and keep its confirmation. Internal filenames must remain unchanged.
+The checks cover floor classification, tile counting, path planning,
+movement, turning, section selection, entrance verification, and the
+final-cell timing budget. Measured simulation results and their scope
+are recorded in [tests/VALIDATION.md](tests/VALIDATION.md).
