@@ -40,7 +40,8 @@ This is an encoder/geometry check, not a Supervisor measurement of pose.
 
 ## Automated checks
 
-All 64 tests pass:
+All 66 tests pass after submission cleanup, including the controller entry
+point and rejection of removed exercise modes:
 
 ```sh
 python3 -B -m unittest discover -s tests

@@ -232,10 +232,9 @@ def path_clear(grid, position, waypoints, level):
     return True
 
 
-def find_route(grid, position, goal, tolerance, only_better_than=None):
+def find_route(grid, position, goal, tolerance):
     """Try the safest clearance first, then progressively tighter ones."""
-    levels = range(len(RADII_CELLS)) if only_better_than is None else range(only_better_than)
-    for level in levels:
+    for level in range(len(RADII_CELLS)):
         raw = plan(grid, position, goal, level, tolerance)
         if raw:
             return smooth(raw, grid, level), level

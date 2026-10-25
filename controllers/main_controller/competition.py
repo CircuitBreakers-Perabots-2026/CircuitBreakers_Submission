@@ -9,8 +9,7 @@ from floor_map import consensus
 def parse_mode(default, arguments):
     parser = argparse.ArgumentParser(description="PeraBots controller")
     parser.add_argument("--mode", default=default, choices=(
-        "full", "auto", "section1", "maze", "navigate", "read_only",
-        "approach", "turn_left", "turn_right", "move_cell", "sequence",
+        "full", "section1", "maze",
     ))
     return parser.parse_args(arguments).mode
 
@@ -49,7 +48,7 @@ def run_course(robot, time_step=16, mode="full"):
     for name in ("led_blue", "led_green"):
         robot.getDevice(name).set(0)
     try:
-        section = starting_section(robot, time_step) if mode in ("full", "auto") else mode
+        section = starting_section(robot, time_step) if mode == "full" else mode
         print(f"COMPETITION | mode={mode} | starting section={section}")
         if section == "maze":
             run_maze(robot, time_step)

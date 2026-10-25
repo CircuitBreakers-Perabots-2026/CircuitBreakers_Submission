@@ -6,6 +6,7 @@ import math
 import os
 import sys
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(
@@ -15,6 +16,7 @@ sys.path.insert(0, os.path.join(
 import competition
 import obstacle_navigation as section1
 from test_floor_detection import Camera, Device
+import main_controller
 
 
 class StartingRobot:
@@ -32,6 +34,24 @@ class StartingRobot:
 
 
 class CompetitionTests(unittest.TestCase):
+    def test_entrypoint_dispatches_each_competition_mode(self):
+        for mode in ("full", "section1", "maze"):
+            with self.subTest(mode=mode):
+                robot = object()
+                with patch.dict(sys.modules, {"controller": SimpleNamespace(Robot=lambda: robot)}), \
+                        patch.object(sys, "argv", ["main_controller.py", "--mode", mode]), \
+                        patch.object(main_controller, "run_course") as run:
+                    main_controller.main()
+                    run.assert_called_once_with(robot, 16, mode)
+
+    def test_removed_exercise_mode_is_rejected_before_robot_startup(self):
+        with patch.object(sys, "argv", ["main_controller.py", "--mode", "sequence"]), \
+                contextlib.redirect_stderr(io.StringIO()), \
+                patch.object(main_controller, "run_course") as run:
+            with self.assertRaises(SystemExit):
+                main_controller.main()
+            run.assert_not_called()
+
     def test_auto_selection_handles_section1_and_dedicated_maze_attempts(self):
         for rgb, expected in [((120, 0, 0), "section1"),
                               ((110, 112, 111), "section1"),

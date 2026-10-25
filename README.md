@@ -1,7 +1,7 @@
 # CircuitBreakers PeraBots controller
 
-The `section01` branch combines autonomous obstacle navigation and maze
-exploration in the required `controllers/main_controller/` folder.
+The controller combines autonomous obstacle navigation and maze exploration
+in the required `controllers/main_controller/` folder.
 
 ## Run in Webots R2025a
 
@@ -29,7 +29,7 @@ controllerArgs [ "--mode=section1" ]
 
 Modes are `full` (default, including automatic section selection), `maze`
 (explicit dedicated maze attempt), and `section1` (stop after verifying
-the entrance). Existing motor/sensor exercise modes remain available.
+the entrance).
 
 ## Navigation and rulebook constraints
 
@@ -82,5 +82,37 @@ python3 -B -m unittest discover -s tests
 The tests cover colour detection, mapping, shortest paths, motion and
 braking, section selection, successful and failed handoffs, sensor mount
 offsets, openings at different positions, obstacle clearance, scan
-coverage, and the final-cell timing budget. See the validation records in
-`tests/` for measured Webots results and their scope.
+coverage, and the final-cell timing budget. See `tests/VALIDATION.md`
+for measured Webots results and their scope.
+
+## Submission
+
+Use Webots R2025a. Keep the required filenames and folder layout:
+
+```text
+CircuitBreakers_Submission/
+  controllers/main_controller/main_controller.py
+  controllers/main_controller/  (all helper modules)
+  protos/Arena.proto
+  protos/Obstacles.proto
+  protos/TwoWheelRobot.proto
+  worlds/Arena.wbt
+  worlds/MazeTest.wbt
+```
+
+Create an archive from committed main, without caches or local preferences:
+
+```sh
+mkdir -p dist
+git archive --format=zip --prefix=CircuitBreakers_Submission/ --output=dist/CircuitBreakers_Submission.zip main
+```
+
+Extract the archive into a fresh folder and check Arena.wbt and MazeTest.wbt
+before uploading. The default controller detects which section it starts in;
+no controller edits are needed for dedicated maze attempts.
+
+The rulebook lists 28 October as the Phase 1 deadline. It says the final
+archive format, outer filename and submission link will be announced through
+the official PeraBots channels. Check that notice for the closing time and
+any naming/format requirements, then upload through the official submission
+form and keep its confirmation. Internal filenames must remain unchanged.

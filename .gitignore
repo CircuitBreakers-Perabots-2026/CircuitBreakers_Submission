@@ -1,1 +1,6 @@
-controllers/main_controller/__pycache__
+__pycache__/
+*.py[cod]
+.DS_Store
+worlds/.*.wbproj
+worlds/.*.jpg
+dist/
